@@ -5,6 +5,7 @@
 #include "EventLoopThread.h"
 
 #include "EventLoop.h"
+#include "base/CurrentThread.h"
 #include "base/utils.h"
 
 namespace fleabane {
@@ -47,7 +48,8 @@ namespace fleabane {
     void EventLoopThread::threadFunc()
     {
         // 修改线程名
-        setCurrentThreadName(name_);
+        // setCurrentThreadName(name_);
+        current_thread::set_name(name_);
 
         // 核心：EventLoop 是在子线程的栈上创建的！
         // 它的生命周期与 threadFunc 函数一致

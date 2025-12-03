@@ -42,17 +42,18 @@ std::string getMimeType(const std::string& filename) {
 
 
 // 业务逻辑回调函数
-void httpCallback(const HttpRequest& req, HttpResponse* resp) {
+void httpCallback(const TcpConnectionPtr& conn, HttpRequest req) {
+    HttpResponse resp {false};
     // 1. 打印请求信息 (调试用，高并发压测时请注释掉日志)
     LOG_INFO("Request: {} {}", req.methodString(), req.url());
     LOG_INFO("User-Agent: {}", req.getHeader("User-Agent"));
 
     // 2. 简单的路由逻辑
     if (req.url() == "/") {
-        resp->setStatusCode(HttpStatusCode::k200Ok);
-        resp->setStatusMessage("OK");
-        resp->setContentType("text/html");
-        resp->setBody("<html>"
+        resp.setStatusCode(HttpStatusCode::k200Ok);
+        resp.setStatusMessage("OK");
+        resp.setContentType("text/html");
+        resp.setBody("<html>"
                       "<head><title>MyWebServer</title></head>"
                       "<body>"
                       "<h1>Welcome to MyWebServer!</h1>"
@@ -66,34 +67,34 @@ void httpCallback(const HttpRequest& req, HttpResponse* resp) {
                       "</html>");
     }
     else if (req.url() == "/hello") {
-        resp->setStatusCode(HttpStatusCode::k200Ok);
-        resp->setStatusMessage("OK");
-        resp->setContentType("text/plain");
-        resp->setBody("Hello, World!");
+        resp.setStatusCode(HttpStatusCode::k200Ok);
+        resp.setStatusMessage("OK");
+        resp.setContentType("text/plain");
+        resp.setBody("Hello, World!");
     }
     else if (req.url() == "/json") {
-        resp->setStatusCode(HttpStatusCode::k200Ok);
-        resp->setStatusMessage("OK");
-        resp->setContentType("application/json");
-        resp->setBody(R"({"code": 0, "message": "success", "data": [1, 2, 3]})");
+        resp.setStatusCode(HttpStatusCode::k200Ok);
+        resp.setStatusMessage("OK");
+        resp.setContentType("application/json");
+        resp.setBody(R"({"code": 0, "message": "success", "data": [1, 2, 3]})");
     }
     else if (req.url() == "/echo") {
         // 回显服务：将请求体原封不动返回
 
         LOG_INFO("客户端发送的请求体为：{}", req.getBody());
 
-        resp->setStatusCode(HttpStatusCode::k200Ok);
-        resp->setStatusMessage("OK");
+        resp.setStatusCode(HttpStatusCode::k200Ok);
+        resp.setStatusMessage("OK");
         
         // 保持原有的 Content-Type，如果没有则默认为 text/plain
         std::string contentType = req.getHeader("Content-Type");
         if (contentType.empty()) {
             contentType = "text/plain";
         }
-        resp->setContentType(contentType);
+        resp.setContentType(contentType);
         
         // 设置响应体为请求体
-        resp->setBody(req.getBody());
+        resp.setBody(req.getBody());
     }
     // --- 静态文件处理逻辑 ---
     // 约定：所有以 /static/ 开头的请求都映射到当前目录下的文件
@@ -105,9 +106,9 @@ void httpCallback(const HttpRequest& req, HttpResponse* resp) {
 
         // 2. 检查文件是否存在
         if (!fs::exists(filename) || fs::is_directory(filename)) {
-            resp->setStatusCode(HttpStatusCode::k404NotFound);
-            resp->setStatusMessage("Not Found");
-            resp->setBody("File Not Found: " + filename);
+            resp.setStatusCode(HttpStatusCode::k404NotFound);
+            resp.setStatusMessage("Not Found");
+            resp.setBody("File Not Found: " + filename);
             return;
         }
 
@@ -118,8 +119,8 @@ void httpCallback(const HttpRequest& req, HttpResponse* resp) {
         // 但为了验证我们网络库的 Buffer 和 Write 逻辑，这里读入内存反而是个极好的测试case。
         std::ifstream file(filename, std::ios::binary | std::ios::ate);
         if (!file.is_open()) {
-            resp->setStatusCode(HttpStatusCode::k500InternalServerError);
-            resp->setBody("Failed to open file");
+            resp.setStatusCode(HttpStatusCode::k500InternalServerError);
+            resp.setBody("Failed to open file");
             return;
         }
 
@@ -128,21 +129,21 @@ void httpCallback(const HttpRequest& req, HttpResponse* resp) {
 
         std::string body(size, '\0');
         if (file.read(&body[0], size)) {
-            resp->setStatusCode(HttpStatusCode::k200Ok);
-            resp->setStatusMessage("OK");
-            resp->setContentType(getMimeType(filename));
-            resp->setBody(body);
+            resp.setStatusCode(HttpStatusCode::k200Ok);
+            resp.setStatusMessage("OK");
+            resp.setContentType(getMimeType(filename));
+            resp.setBody(body);
         } else {
-            resp->setStatusCode(HttpStatusCode::k500InternalServerError);
-            resp->setBody("Failed to read file");
+            resp.setStatusCode(HttpStatusCode::k500InternalServerError);
+            resp.setBody("Failed to read file");
         }
     }
     else {
         // 404 处理
-        resp->setStatusCode(HttpStatusCode::k404NotFound);
-        resp->setStatusMessage("Not Found");
-        resp->setCloseConnection(true); // 404 时通常关闭连接
-        resp->setBody("<html><body><h1>404 Not Found</h1></body></html>");
+        resp.setStatusCode(HttpStatusCode::k404NotFound);
+        resp.setStatusMessage("Not Found");
+        resp.setCloseConnection(true); // 404 时通常关闭连接
+        resp.setBody("<html><body><h1>404 Not Found</h1></body></html>");
     }
 }
 
@@ -166,7 +167,7 @@ int main(int argc, char* argv[]) {
 
     // 1. 创建主循环 (Main Reactor)
     EventLoop loop;
-    setCurrentThreadName("HS-main"); // 设置当前线程的名称
+    current_thread::set_name("HS-main"); // 设置当前线程的名称
 
     signal(SIGPIPE, SIG_IGN);
 

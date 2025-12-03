@@ -239,7 +239,8 @@ namespace fleabane {
     }
 
     void TcpConnection::sendInLoopString(const std::string &message) {
-        throw std::runtime_error("未实现");
+        // throw std::runtime_error("未实现");
+        sendInLoop(message.data(), message.size());
     }
 
     /// 已连接Channel发现可写时实际上会调用该函数，执行实际的写事件

@@ -8,6 +8,7 @@
 #include <string>
 #include <net/EventLoop.h>
 
+#include "HttpRequest.h"
 #include "base/NonCopyable.h"
 #include "net/TcpServer.h"
 
@@ -21,10 +22,11 @@ namespace fleabane {
 
     class HttpServer : NonCopyable {
     public:
-        // 用户回调函数类型：当收到一个完整的 HTTP 请求时调用
-        // 参数：(HttpRequest, HttpResponse*)
-        // 用户需要从 Request 读取数据，并填充 Response
-        using HttpCallback = std::function<void(const HttpRequest&, HttpResponse*)>;
+        // 修改回调定义：
+        // 1. 传入 TcpConnectionPtr (用于后续发送数据)
+        // 2. 传入 HttpRequest (按值传递，支持 move)
+        // 3. 移除 HttpResponse* 参数 (由业务层自己创建和管理)
+        using HttpCallback = std::function<void(const TcpConnectionPtr&, HttpRequest)>;
 
         HttpServer(EventLoop *loop,
                    const InetAddress &listenAddr,
@@ -67,7 +69,7 @@ namespace fleabane {
         /// [内部辅助] 当解析完一个完整的 Request 后，处理并发送 Response
         /// 它会检查 Request Header 里的 Connection 字段，决定 Response 发完后要不要关连接。这是符合 HTTP/1.1 RFC 标准的行为
         /// 注意，它只会被onMessage调用（而且只有当请求解释完毕后才会调用）
-        void onRequest(const TcpConnectionPtr& conn, const HttpRequest& req);
+        void onRequest(const TcpConnectionPtr& conn, HttpRequest req) const;
 
         /// 持有底层的 TcpServer
         TcpServer server_;

@@ -18,7 +18,7 @@ namespace fleabane {
     class ThreadPool {
     public:
         // constructor
-        ThreadPool(size_t threads, size_t max_tasks);
+        ThreadPool(size_t threads, size_t max_tasks = 10000, const std::string &name = "");
 
         ~ThreadPool();
 
@@ -41,6 +41,8 @@ namespace fleabane {
         std::mutex m_queue_mutex;                     // 保护任务队列的互斥锁
         std::condition_variable m_condition;          // 用于线程同步的条件变量
         std::atomic<bool> m_stop;                     // 原子布尔值，用于停止线程池
+
+        std::string m_name;                           // 线程池的名称
     };
 
     // 这里可以接受一个可调用对象和对应的参数列表。
@@ -93,10 +95,11 @@ namespace fleabane {
         return res;
     }
 
-    inline ThreadPool::ThreadPool(const size_t threads, const size_t max_tasks = 10000):
+    inline ThreadPool::ThreadPool(const size_t threads, const size_t max_tasks, const std::string &name):
         m_worker_number(threads),
         m_max_tasks(max_tasks),
-        m_stop(false)
+        m_stop(false),
+        m_name(name)
     {
         if(threads <= 0) {
             throw std::invalid_argument("Thread pool size must be greater than zero.");
@@ -108,7 +111,12 @@ namespace fleabane {
         // 创建并启动指定数量的工作线程
         for(size_t i = 0; i < m_worker_number; ++i) {
             // 相当于n_workers.push_back(std::thread(xxx));
-            m_workers.emplace_back([this] {
+            m_workers.emplace_back([this, i] {
+                const std::string worker_name = this->m_name + "#" + std::to_string(i);
+                // 设置线程名
+                current_thread::set_name(worker_name);
+
+                // 调用时机的工作函数执行
                 this->worker_run();
             });
         }

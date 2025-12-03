@@ -29,6 +29,21 @@ namespace fleabane {
     public:
         HttpRequest() : method_(Method::kInvalid), version_(Version::kUnknown) {}
 
+
+        /// 注意，要想让一个对象可以被安全移动，要满足两个基本条件
+        /// 1. 移动操作是安全的，能够顺利窃取原始对象的资源（或者对于trivial类型直接拷贝）
+        /// 2. 移动后原始对象是可析构的（不会影响目标对象），这里因为都是用容器管理，它们在移动后天生满足“可析构”
+
+        /// 支持移动构造
+        HttpRequest(HttpRequest&& rhs) noexcept {
+            swap(rhs); // 直接调用swap函数
+        }
+        /// 支持移动赋值
+        HttpRequest& operator=(HttpRequest&& rhs) noexcept {
+            swap(rhs);
+            return *this;
+        }
+
         // --- Getters / Setters ---
 
         void setVersion(const Version v) { version_ = v; }
@@ -124,7 +139,7 @@ namespace fleabane {
         }
 
         // 交换数据（用于高性能移动）
-        void swap(HttpRequest& that) {
+        void swap(HttpRequest& that) noexcept {
             std::swap(method_, that.method_);
             std::swap(version_, that.version_);
             url_.swap(that.url_);

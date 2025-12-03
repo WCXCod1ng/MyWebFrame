@@ -25,7 +25,8 @@ file(GLOB_RECURSE LIB_SOURCES CONFIGURE_DEPENDS "*.cpp")
 
 # 2. 创建一个库目标
 #    名称为 WebServerLib，源文件列表来自上面的变量
-add_library(Fleabane ${LIB_SOURCES})
+add_library(Fleabane ${LIB_SOURCES}
+        base/CurrentThread.h)
 
 
 # 4. 指定头文件的搜索路径

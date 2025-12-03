@@ -11,10 +11,11 @@
 
 namespace fleabane {
     // 默认的 HTTP 回调（如果用户没设置）
-    void defaultHttpCallback(const HttpRequest&, HttpResponse* resp) {
-        resp->setStatusCode(HttpStatusCode::k404NotFound);
-        resp->setStatusMessage("Not Found");
-        resp->setCloseConnection(true);
+    void defaultHttpCallback(const TcpConnectionPtr& conn, HttpRequest request) {
+        HttpResponse resp {true};
+        resp.setStatusCode(HttpStatusCode::k404NotFound);
+        resp.setStatusMessage("Not Found");
+        resp.setCloseConnection(true);
     }
 
     HttpServer::HttpServer(EventLoop *loop,
@@ -77,8 +78,10 @@ namespace fleabane {
 
         // 3. 检查是否解析完了整个请求 (GotAll)
         if (context->gotAll()) {
-            // 解析完成，调用业务逻辑
-            onRequest(conn, context->request());
+            // 【关键修改】
+            // 解析完成，将 Request 从 Context 中“偷”出来 (move)，移交给 onRequest
+            // 这里串引用，不会增加shared_ptr的计数
+            onRequest(conn, std::move(context->request()));
 
             // 【关键】重置 Context 状态机
             // 因为是 Keep-Alive，连接不会断，后续可能还有新的请求发过来
@@ -86,30 +89,37 @@ namespace fleabane {
         }
     }
 
-    void HttpServer::onRequest(const TcpConnectionPtr& conn, const HttpRequest& req) {
-        const std::string& connection = req.getHeader("Connection");
-        // 判断是否长连接
-        // HTTP/1.1 默认长连接，除非 Connection: close
-        // HTTP/1.0 默认短连接，除非 Connection: Keep-Alive
-        bool close = (connection == "close") ||
-                     (req.getVersion() == Version::kHttp10 && connection != "Keep-Alive");
+    void HttpServer::onRequest(const TcpConnectionPtr& conn, HttpRequest req) const {
+        // const std::string& connection = req.getHeader("Connection");
+        // // 判断是否长连接
+        // // HTTP/1.1 默认长连接，除非 Connection: close
+        // // HTTP/1.0 默认短连接，除非 Connection: Keep-Alive
+        // bool close = (connection == "close") ||
+        //              (req.getVersion() == Version::kHttp10 && connection != "Keep-Alive");
 
-        // 构造响应对象
-        HttpResponse response(close);
+        // 我们不再这里创建 HttpResponse，也不在这里发送。
+        // 我们把 Request 所有权和 Connection 指针，以及“是否需要关闭连接”的建议
+        // 全部打包传给回调函数。
+
+        // 注意：我们将 close 标志暂存到 Request 的上下文中，或者简单点，
+        // 让 WebFrame 重新判断一次（开销很小），这里为了接口简洁，我们只传 req。
 
         // 调用用户回调 (业务逻辑)
         // 用户填充 response 的状态码、Header、Body
-        httpCallback_(req, &response);
-
-        // 序列化响应并通过网络发送
-        Buffer buf;
-        response.appendToBuffer(&buf);
-        conn->send(&buf); // 此时数据进入 TcpConnection 的 OutputBuffer
-
-        // 如果需要关闭连接，调用 shutdown
-        // 注意：TcpConnection::shutdown 会等待数据发完再关闭
-        if (response.closeConnection()) {
-            conn->shutdown();
+        if(httpCallback_) {
+            httpCallback_(conn, std::move(req));
         }
+
+        // 注意，序列化相应并通过网络发回的操作也不会在这里完成，而是将来在线程池中完成
+        // // 序列化响应并通过网络发送
+        // Buffer buf;
+        // response.appendToBuffer(&buf);
+        // conn->send(&buf); // 此时数据进入 TcpConnection 的 OutputBuffer
+        //
+        // // 如果需要关闭连接，调用 shutdown
+        // // 注意：TcpConnection::shutdown 会等待数据发完再关闭
+        // if (response.closeConnection()) {
+        //     conn->shutdown();
+        // }
     }
 }

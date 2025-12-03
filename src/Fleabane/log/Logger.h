@@ -22,6 +22,7 @@
 #include <pthread.h>
 
 #include "ISink.h"
+#include "base/CurrentThread.h"
 #include "utils/BlockingQueue.h"
 #include "base/utils.h"
 
@@ -198,7 +199,7 @@ namespace fleabane {
             },
             .location = loc,
             .thread_id = std::this_thread::get_id(),
-            .thread_name = getCurrentThreadName()
+            .thread_name = current_thread::name()
         };
 
         // 区分是同步还是异步，同步则当前线程完成，异步则交给阻塞队列

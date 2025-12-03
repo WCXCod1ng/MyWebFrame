@@ -25,7 +25,7 @@ namespace fleabane {
 
     class HttpResponse : NonCopyable {
     public:
-        explicit HttpResponse(bool close)
+        explicit HttpResponse(const bool close = false)
             : statusCode_(HttpStatusCode::kUnknown),
               closeConnection_(close) // 默认是否关闭由业务层决定
         {}
