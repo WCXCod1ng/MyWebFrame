@@ -3,6 +3,8 @@
 //
 
 
+#include <jwt-cpp/traits/kazuho-picojson/defaults.h>
+
 #include "../../Fleabane/http/HttpResponse.h"
 #include "../../Fleabane/log/Logger.h"
 #include "../../Fleabane/net/InetAddress.h"
@@ -13,6 +15,59 @@
 
 using namespace fleabane;
 using namespace sedum;
+
+const std::string secret = "my-secret";
+
+// 记录执行时间的中间件
+void execution_time_middleware(Context& ctx) {
+    // 使用单调时钟记录处理本次请求的时间
+    std::chrono::time_point<std::chrono::steady_clock> start = std::chrono::steady_clock::now();
+    LOG_INFO("请求到来");
+    try {
+        ctx.next();
+    } catch (std::exception& e) {
+        std::chrono::time_point<std::chrono::steady_clock> end = std::chrono::steady_clock::now();
+        LOG_INFO("请求发生异常，经过 {}ms", std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count());
+        throw std::runtime_error(std::string("触发异常，异常信息为") + e.what());
+    }
+    std::chrono::time_point<std::chrono::steady_clock> end = std::chrono::steady_clock::now();
+    LOG_INFO("请求结束，经过 {}ms", std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count());
+}
+
+// 校验用户身份的中间件
+void auth_middleware(Context& ctx) {
+    // 这里固定写死，实际需要引入配置文件（类）
+    if(ctx.req().url() != "/register") {
+
+        // 校验是否携带了Header "Authorization"
+        if(auto token = ctx.header("Authorization"); token) {
+            try {
+                auto decoded = jwt::decode(token->get());
+                jwt::verify()
+                    .allow_algorithm(jwt::algorithm::hs256{secret})
+                    .with_issuer("auth_server")
+                    .verify(decoded);
+                // 到此校验成功，提取user_id
+                std::string user_id = decoded.get_payload_claim("user_id").as_string();
+                LOG_INFO("用户{}登录成功", user_id);
+                // 设置到ctx中
+                ctx.set("user_id", user_id);
+                // important，要执行next用以传递到后续的操作中
+                ctx.next();
+            } catch (const std::exception& e) {
+                // 校验失败
+                ctx.STR(fleabane::HttpStatusCode::k403Forbidden, "wrong authorization");
+            }
+        } else {
+            // 403 forbidden
+            ctx.STR(fleabane::HttpStatusCode::k403Forbidden, "without authorization");
+        }
+    } else {
+        // register接口则直接next
+        ctx.next();
+    }
+}
+
 
 int main() {
     // 开启日志，级别为 INFO
@@ -28,6 +83,31 @@ int main() {
 
     const InetAddress addr(9006);
     WebFrame app(addr, "SmartWeb");
+
+    app.use(execution_time_middleware);
+    app.use(auth_middleware);
+
+    // 模拟用户注册，这里简单编写为直接返回一个签名后的jwt
+    app.POST("/register", [](Context& ctx) {
+        auto token = jwt::create()
+            .set_issuer("auth_server")
+            .set_type("JWS")
+            .set_issued_at(std::chrono::system_clock::now())
+            .set_expires_at(std::chrono::system_clock::now() + std::chrono::seconds(3600)) // 设置超时时间为1小时
+            .set_payload_claim("user_id", jwt::claim(std::string("12345")))
+            .sign(jwt::algorithm::hs256{secret});
+        ctx.STR(fleabane::HttpStatusCode::k200Ok, token);
+    });
+
+    // 测试请求级作用域变量传递
+    app.GET("/user", [](Context& ctx) {
+        auto user_id = ctx.get<std::string>("user_id");
+        if(user_id) {
+            ctx.STR(HttpStatusCode::k200Ok, "Hello:" + *user_id);
+        } else {
+            throw std::runtime_error("状态错误，找不到user_id");
+        }
+    });
 
     // 注册GET方法
     app.GET("/user/:id", [](sedum::Context& ctx) {

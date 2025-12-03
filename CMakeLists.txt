@@ -40,6 +40,14 @@ FetchContent_Declare(
         GIT_REPOSITORY https://github.com/nlohmann/json.git
         GIT_TAG "v3.11.3" # 使用一个具体的、稳定的版本标签
 )
+# =======================================================
+# 集成 jwt-cpp 库
+# =======================================================
+FetchContent_Declare(
+        jwt-cpp
+        GIT_REPOSITORY https://github.com/Thalhammer/jwt-cpp.git
+        GIT_TAG v0.6.0   # 可换版本
+)
 
 
 # 3. 配置依赖并使其可用
@@ -48,8 +56,8 @@ FetchContent_MakeAvailable(
         googletest
         cereal
         nlohmann_json
+        jwt-cpp
 )
-
 ## =======================================================
 ## 集成 MySQL C++ Connector (新添加的部分)
 ## =======================================================

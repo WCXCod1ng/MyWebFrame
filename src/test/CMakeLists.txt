@@ -33,6 +33,7 @@ target_link_libraries(web_frame_test
         PRIVATE
         Fleabane
         Sedum
+        jwt-cpp::jwt-cpp
 )
 
 # 3. 链接 GoogleTest 库

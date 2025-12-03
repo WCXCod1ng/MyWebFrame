@@ -56,6 +56,15 @@ namespace sedum {
             baseLoop_.loop();
         }
 
+        // --- 中间件 ---
+
+        /// 注册中间件
+        void use(HandlerFunc middleware) {
+            // 加入到全局中间件中
+            middlewares_.push_back(std::move(middleware));
+        }
+
+
         /// 设置线程数
         void setThreadNum(const int num) { server_.setThreadNum(num); }
 
@@ -110,34 +119,43 @@ namespace sedum {
             // 调用底层的路由组件
             auto [status, handler, params] = router_.find_route(path, method);
 
-            // 2. 将所有需要的数据打包进 Lambda，扔进线程池
+            // 2. 确定最终要执行的handler（考虑路由失败的问题）
+            HandlerFunc targetHandler;
+            if (status == RouteStatus::FOUND) {
+                targetHandler = std::move(handler);
+            } else if (status == RouteStatus::NOT_FOUND_METHOD) {
+                targetHandler = methodNotAllowedHandler_; // 注意不能使用移动，否则第二次执行到此就会失效
+            } else {
+                targetHandler = notFoundHandler_;
+            }
+
+            // 3. 将所有需要的数据打包进 Lambda，扔进线程池
             // 注意：req 使用 std::move 移动进 lambda
             // conn 是 shared_ptr，拷贝进 lambda 增加引用计数
             // params 也是移动
             // handler 是拷贝，因为不能更改router的内容
-            businessPool_.enqueue([this, conn, req = std::move(req), status = status,
-                                 handler = handler, params = std::move(params)]() mutable
+            businessPool_.enqueue([this,
+                conn,
+                req = std::move(req),
+                handler = std::move(targetHandler),
+                params = std::move(params)]() mutable
             {
                 // --- 以下代码在 业务线程 中执行 ---
 
-                // 3. 创建 Context (在堆上，shared_ptr)
+                // 4. 创建 Context (在堆上，shared_ptr)
+                // 将Middleware的引用传入
+                // 将handler移动到Context中，拷贝也可以，但是不能引用，因为handler是栈上的局部变量，dispatch结束后就会析构
                 // 构造时 req 再次 move 进 Context
-                const auto ctx = std::make_shared<Context>(conn, std::move(req), std::move(params));
+                const auto ctx = std::make_shared<Context>(middlewares_, std::move(handler), conn, std::move(req), std::move(params));
 
-                // 4. 执行 Handler
-                if (status == RouteStatus::FOUND) {
-                    try {
-                        handler(*ctx); // 传引用
-                    } catch (const std::exception& e) {
-                        if (exceptionHandler_) exceptionHandler_(*ctx, e);
-                    }
-                } else if (status == RouteStatus::NOT_FOUND_METHOD) {
-                    methodNotAllowedHandler_(*ctx);
-                } else {
-                    notFoundHandler_(*ctx);
+                // 5. 开始执行洋葱模型，并捕获异常
+                try {
+                    ctx->next();
+                } catch (const std::exception& e) {
+                    if (exceptionHandler_) exceptionHandler_(*ctx, e);
                 }
 
-                // 5. 发送响应
+                // 6. 发送响应
                 // 业务逻辑执行完后，主动将 Response 写回
                 ctx->flush();
             });
@@ -174,6 +192,9 @@ namespace sedum {
 
         /// 路由组件
         WebRouter router_;
+
+        /// 全局中间件
+        std::vector<HandlerFunc> middlewares_;
 
         // 保存用户的自定义处理器
         HandlerFunc notFoundHandler_;
