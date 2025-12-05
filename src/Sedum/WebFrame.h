@@ -38,7 +38,7 @@ namespace sedum {
             : baseLoop_(),
               businessPool_(8, 1000, name), // 设置业务线程池的线程数为8，最大任务数为1000
               server_(&baseLoop_, addr, "ioloop"),
-              rootGroup_("/", this) // 管理一个根路由组，它匹配的前缀是“/”
+              rootGroup_("/", router_) // 管理一个根路由组，它匹配的前缀是“/”
         // 设置ioloop的线程数为8
         {
             // WebFrame在主线程中被构造
@@ -136,7 +136,7 @@ namespace sedum {
             const auto &path = req.url();
             const auto method = req.method();
             // 调用底层的路由组件查找路由
-            auto [status, chain, params] = router_.find_route(path, method);
+            auto [status, chain, params] = router_.findRoute(path, method);
 
             // 2. 确定最终要执行的handler（考虑路由失败的问题）
             HandlersChain targetChain;

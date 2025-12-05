@@ -53,7 +53,7 @@ namespace sedum {
 
         /// 添加一条路由规则
         /// 核心的路由注册函数。它会接收一个路径、HTTP方法和handlers_chain，然后解析路径，遍历树，在适当的位置创建新节点，并最终将处理器存放在目标节点的 handlers 映射中
-        void add_route(const std::string& path, Method method, HandlersChain handlers_chain);
+        void addRoute(const std::string& path, Method method, HandlersChain handlers_chain);
 
 
         /// 查找匹配的路由
@@ -64,7 +64,7 @@ namespace sedum {
         /// @return 返回一个 pair:
         ///         - .first: 找到的 ApiHandler (如果没找到则为空)
         ///         - .second: 从路径中解析出的参数 map (例如 {"id": "123"})
-        [[nodiscard]] RouteResult find_route(const std::string& path, Method method);
+        [[nodiscard]] RouteResult findRoute(const std::string& path, Method method);
 
     private:
         // 内部的树节点结构
@@ -93,7 +93,7 @@ namespace sedum {
         std::unique_ptr<Node> m_root;
 
         /// 内部辅助工具函数，用于将像 "/users/:id/posts" 这样的路径字符串分割成 ["users", ":id", "posts"] 的段列表，方便后续在树中进行遍历
-        static std::vector<std::string> split_path(const std::string& path);
+        static std::vector<std::string> splitPath(const std::string& path);
     };
 }
 

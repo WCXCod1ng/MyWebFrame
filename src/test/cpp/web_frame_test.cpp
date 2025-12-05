@@ -172,6 +172,15 @@ int main() {
         throw std::runtime_error("组内故意抛出异常");
     });
 
+    auto subgroup1 = group1.group("/subgroup1");
+    subgroup1.use([](Context& ctx) {
+        LOG_INFO("子组中间件被执行，路径为{}", ctx.req().url());
+        ctx.next();
+    });
+    subgroup1.GET("/hello", [](Context& ctx) {
+        ctx.STR(HttpStatusCode::k200Ok, "Hello from subgroup1!");
+    });
+
     app.start();
 
     return 0;

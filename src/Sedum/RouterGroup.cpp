@@ -9,7 +9,7 @@ namespace sedum {
         // 递归创建子组：新前缀 = 当前前缀 + 相对路径
         // 将来WebFrame会持有一个根group，一切的其他group都会由它的group函数来创建
         const std::string newPrefix = combinePath(relativePath);
-        RouterGroup newGroup(newPrefix, engine_);
+        RouterGroup newGroup(newPrefix, router_);
 
         // 关键点：子组继承父组的中间件
         // Gin 的逻辑是 copy 父组的中间件到子组
@@ -49,7 +49,7 @@ namespace sedum {
         chain.push_back(std::move(handler));           // 最后是业务逻辑
 
         // 3. 注册到底层 WebRouter
-        engine_->router().add_route(finalPath, method, std::move(chain));
+        router_.addRoute(finalPath, method, std::move(chain));
     }
 
     std::string RouterGroup::combinePath(const std::string& relativePath) const {

@@ -16,8 +16,8 @@ namespace sedum {
     public:
         using HandlerFunc = common::HandlerFunc;
 
-        RouterGroup(std::string prefix, WebFrame* engine)
-            : prefix_(std::move(prefix)), engine_(engine) {}
+        RouterGroup(std::string prefix, WebRouter& router)
+            : prefix_(std::move(prefix)), router_(router) {}
 
         // --- 核心功能 1: 创建子路由组 ---
         // 例如 group("/v1") -> 新的前缀为 "/api/v1"
@@ -46,7 +46,8 @@ namespace sedum {
         [[nodiscard]] std::string combinePath(const std::string& relativePath) const;
 
         std::string prefix_;   // 当前组的绝对前缀 (e.g. "/api/v1")
-        WebFrame* engine_;     // 指向 WebFrame (Engine) 实例，用于操作底层的 WebRouter，这里选择指针的目的是为了使得 RouterGroup 可拷贝，而且我们保证 engine_ 指向的实例在 RouterGroup 生命周期内始终有效。RouterGroup要么作为WebFrame的成员存在，要么被WebFrame创建出来，二者的生命周期都不会超过WebFrame本身
+        WebRouter &router_; // 底层路由器实例的引用，用于实际的路由注册和查找
+        // WebFrame* engine_;     // 指向 WebFrame (Engine) 实例，用于操作底层的 WebRouter，这里选择指针的目的是为了使得 RouterGroup 可拷贝，而且我们保证 engine_ 指向的实例在 RouterGroup 生命周期内始终有效。RouterGroup要么作为WebFrame的成员存在，要么被WebFrame创建出来，二者的生命周期都不会超过WebFrame本身
 
         // 当前组专属的中间件链
         std::vector<HandlerFunc> middlewares_;

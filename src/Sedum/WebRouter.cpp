@@ -8,9 +8,9 @@
 #include <sstream>
 
 namespace sedum {
-    void WebRouter::add_route(const std::string& path, const Method method, HandlersChain chain) {
+    void WebRouter::addRoute(const std::string& path, const Method method, HandlersChain chain) {
         // 1. 分割路径
-        const auto segments = split_path(path);
+        const auto segments = splitPath(path);
 
         // 2. 从根节点开始遍历Trie，并在遍历的过程中构建
         Node* current_node = m_root.get();
@@ -76,11 +76,11 @@ namespace sedum {
         current_node->handlers[method] = std::move(chain); // 存储整个chain
     }
 
-    RouteResult WebRouter::find_route(const std::string &path, Method method) {
+    RouteResult WebRouter::findRoute(const std::string &path, Method method) {
         // 1. 初始化
         Node* current_node = m_root.get();
         std::unordered_map<std::string, std::string> params;
-        const auto segments = split_path(path);
+        const auto segments = splitPath(path);
 
         // 2. 遍历请求路径的每一段
         for (size_t i = 0; i < segments.size(); ++i) {
@@ -145,7 +145,7 @@ namespace sedum {
         return {RouteStatus::FOUND, handler_it->second, std::move(params)};
     }
 
-    std::vector<std::string> WebRouter::split_path(const std::string &path) {
+    std::vector<std::string> WebRouter::splitPath(const std::string &path) {
         std::vector<std::string> segments;
         // 处理边界条件，即只由一个斜杠，此时segments也是有一个元素“/”
         if(path.empty() || path == "/") {

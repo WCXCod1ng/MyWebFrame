@@ -143,6 +143,7 @@ namespace fleabane {
             std::swap(method_, that.method_);
             std::swap(version_, that.version_);
             url_.swap(that.url_);
+            queries.swap(that.queries);
             receiveTime_.swap(that.receiveTime_);
             headers_.swap(that.headers_);
             body_.swap(that.body_); // 如果有 body 的话
