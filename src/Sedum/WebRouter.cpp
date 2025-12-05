@@ -8,11 +8,11 @@
 #include <sstream>
 
 namespace sedum {
-    void WebRouter::add_route(const std::string& path, Method method, HandlerFunc handler) {
+    void WebRouter::add_route(const std::string& path, const Method method, HandlersChain chain) {
         // 1. 分割路径
         const auto segments = split_path(path);
 
-        // 2. 从根节点开始遍历radix tree，并在遍历的过程中构建
+        // 2. 从根节点开始遍历Trie，并在遍历的过程中构建
         Node* current_node = m_root.get();
 
         for(size_t i = 0; i < segments.size(); ++i) {
@@ -73,10 +73,10 @@ namespace sedum {
             // 已经为该路径和方法注册过一个处理器了
             throw std::logic_error("Route conflict: Handler for this path and method already exists.");
         }
-        current_node->handlers[method] = std::move(handler);
+        current_node->handlers[method] = std::move(chain); // 存储整个chain
     }
 
-    RouteResult WebRouter::find_route(const std::string &path, Method method) const {
+    RouteResult WebRouter::find_route(const std::string &path, Method method) {
         // 1. 初始化
         Node* current_node = m_root.get();
         std::unordered_map<std::string, std::string> params;
@@ -87,6 +87,7 @@ namespace sedum {
             const std::string& segment = segments[i];
 
             // 3. 按照“静态 > 参数 > 通配符”的优先级进行匹配
+
 
             // 优先级 1: 查找静态子节点
             auto& static_children = current_node->static_children;
@@ -124,20 +125,20 @@ namespace sedum {
             }
 
             // 如果以上都未匹配成功，说明没有对应的路由
-            return {RouteStatus::NOT_FOUND_URL, static_cast<HandlerFunc>(nullptr), {}};
+            return {RouteStatus::NOT_FOUND_URL, {}, {}};
         }
 
         // 到此说明匹配完毕
         found_node_path:
             // 4. 如果该路径下没有注册任何方法，视为不是一个正确的URL，返回NOT_FOUND_URL
             if(current_node->handlers.empty()) {
-                return {RouteStatus::NOT_FOUND_URL, nullptr, {}};
+                return {RouteStatus::NOT_FOUND_URL, {}, {}};
             }
         // 5. 路径完全匹配后，在最终节点上根据 HTTP 方法查找处理器
         auto handler_it = current_node->handlers.find(method);
         if (handler_it == current_node->handlers.end()) {
             // 路径匹配，但方法找不到 (405 Method Not Allowed)
-            return {RouteStatus::NOT_FOUND_METHOD, nullptr, {}};
+            return {RouteStatus::NOT_FOUND_METHOD, {}, {}};
         }
 
         // 6. 找到了对应的处理器

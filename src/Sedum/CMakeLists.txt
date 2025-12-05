@@ -2,6 +2,9 @@ set(LIBRARY_SOURCES
         WebFrame.cpp
         WebRouter.cpp
         pool/mysql_connection_pool.cpp
+        RouterGroup.h
+        RouterGroup.cpp
+        Define.h
 )
 
 add_library(Sedum ${LIBRARY_SOURCES})

@@ -4,11 +4,12 @@
 
 #ifndef CONTEXT_H
 #define CONTEXT_H
+#include <WebRouter.h>
 #include <http/HttpRequest.h>
 #include <http/HttpResponse.h>
 #include <net/Callbacks.h>
 #include <net/TcpConnection.h>
-
+#include "Define.h"
 
 namespace sedum {
     using namespace fleabane;
@@ -16,17 +17,16 @@ namespace sedum {
 
     using ContextPtr = std::shared_ptr<Context>;
 
-    /// 定义HandlerFunc，它与Router中定义的接口一样（也即与用户注册的handler具有相同的签名）
-    using HandlerFunc = std::function<void(Context&)>;
-
     /// 暴露给业务端用户使用的Context
     class Context {
     public:
-        Context(const std::vector<HandlerFunc>& middlewares, HandlerFunc handler, const fleabane::TcpConnectionPtr& conn, HttpRequest&& req,
+        using HandlerFunc = common::HandlerFunc;
+
+
+        Context(std::vector<HandlerFunc> handlersChain, const fleabane::TcpConnectionPtr& conn, HttpRequest&& req,
                 std::unordered_map<std::string, std::string> params)
-            : middlewares_(middlewares), // middlewares，只需要传递引用，启动服务后永远都不会变化
-              handler_(std::move(handler)), // handler
-              conn_(conn), // 引用计数+1
+            : handlersChain_(std::move(handlersChain))
+              ,conn_(conn), // 引用计数+1
               req_(std::move(req)),
               resp_(true), // 暂时设置为true，稍后会进行修正
               params_(std::move(params)) {
@@ -53,25 +53,20 @@ namespace sedum {
             // 对于中间件：需要主动next，否则认为中断
             // 对于业务handler，由于它是最后一个，所以即使调用next也会退出
 
-            if(index_ < static_cast<int>(middlewares_.size())) {
-                // 说明中间件没有到结束（后续还有Middleware），执行它
-                middlewares_[index_](*this);
-            } else if (index_ == static_cast<int>(middlewares_.size())) {
-                // 说明中间件执行完毕，现在需要执行业务handler
-                if(handler_) {
-                    handler_(*this);
-                }
+            if(index_ < static_cast<int>(handlersChain_.size())) {
+                // 说明没有到结束（后续还有handler），执行它
+                handlersChain_[index_](*this);
             }
         }
 
         /// 显式终止后续处理
         void abort() {
-            index_ = static_cast<int>(middlewares_.size()) + 1;
+            index_ = static_cast<int>(handlersChain_.size());
         }
 
         /// 判断是否终止，Middleware和handler都执行完毕意味着要终止
         bool isAborted() const {
-            return index_ > static_cast<int>(middlewares_.size());
+            return index_ >= static_cast<int>(handlersChain_.size());
         }
 
         /// 管理请求级作用域变量
@@ -187,8 +182,8 @@ namespace sedum {
 
         /// 中间件
         int index_ = -1; // 记录当前执行到哪个handler了
-        const std::vector<HandlerFunc>& middlewares_; // 注册在Context中的所有handler，注意它只是用来借用WebFrame
-        HandlerFunc handler_; // 注意不能使用引用，因为一个业务handler的声明周期与一个Context的一致（而且由于使用了线程池，所以生命周期超过dispatch，除非在lambda中构造）
+
+        std::vector<HandlerFunc> handlersChain_; // 存储实际要执行的handler链（它实际上就包括了中间件逻辑和实际的业务逻辑）
 
         /// 管理属于本次请求作用域内部的所有变量
         std::unordered_map<std::string, std::any> variables_;

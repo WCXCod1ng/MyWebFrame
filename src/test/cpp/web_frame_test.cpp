@@ -37,7 +37,7 @@ void execution_time_middleware(Context& ctx) {
 // 校验用户身份的中间件
 void auth_middleware(Context& ctx) {
     // 这里固定写死，实际需要引入配置文件（类）
-    if(ctx.req().url() != "/register") {
+    if(ctx.req().url().find("/register") == std::string::npos) {
 
         // 校验是否携带了Header "Authorization"
         if(auto token = ctx.header("Authorization"); token) {
@@ -52,20 +52,20 @@ void auth_middleware(Context& ctx) {
                 LOG_INFO("用户{}登录成功", user_id);
                 // 设置到ctx中
                 ctx.set("user_id", user_id);
-                // important，要执行next用以传递到后续的操作中
-                ctx.next();
             } catch (const std::exception& e) {
                 // 校验失败
                 ctx.STR(fleabane::HttpStatusCode::k403Forbidden, "wrong authorization");
+                return;
             }
         } else {
             // 403 forbidden
             ctx.STR(fleabane::HttpStatusCode::k403Forbidden, "without authorization");
+            return;
         }
-    } else {
-        // register接口则直接next
-        ctx.next();
     }
+
+    // important，要执行next用以传递到后续的操作中
+    ctx.next();
 }
 
 
@@ -84,11 +84,13 @@ int main() {
     const InetAddress addr(9006);
     WebFrame app(addr, "SmartWeb");
 
-    app.use(execution_time_middleware);
-    app.use(auth_middleware);
+    auto user_group = app.group("/user");
+
+    user_group.use(execution_time_middleware);
+    user_group.use(auth_middleware);
 
     // 模拟用户注册，这里简单编写为直接返回一个签名后的jwt
-    app.POST("/register", [](Context& ctx) {
+    user_group.POST("/register", [](Context& ctx) {
         auto token = jwt::create()
             .set_issuer("auth_server")
             .set_type("JWS")
@@ -100,7 +102,7 @@ int main() {
     });
 
     // 测试请求级作用域变量传递
-    app.GET("/user", [](Context& ctx) {
+    user_group.GET("/user", [](Context& ctx) {
         auto user_id = ctx.get<std::string>("user_id");
         if(user_id) {
             ctx.STR(HttpStatusCode::k200Ok, "Hello:" + *user_id);
@@ -110,7 +112,7 @@ int main() {
     });
 
     // 注册GET方法
-    app.GET("/user/:id", [](sedum::Context& ctx) {
+    user_group.GET("/user/:id", [](sedum::Context& ctx) {
         if(const auto user_id = ctx.pathVariable("id")) {
 
             LOG_INFO("GET方法被执行到");
@@ -122,12 +124,12 @@ int main() {
     });
 
     // 测试异常处理
-    app.POST("/panic", [](Context& ctx) {
+    user_group.POST("/panic", [](Context& ctx) {
        throw std::runtime_error("故意抛出一个异常");
     });
 
     // 测试查询参数
-    app.GET("/user/query", [](Context& ctx) {
+    user_group.GET("/user/query", [](Context& ctx) {
         if (const auto name = ctx.query("name")) {
             ctx.STR(HttpStatusCode::k200Ok, "hello " + *name);
         }
@@ -153,6 +155,22 @@ int main() {
         ctx.resp().setBody("<h1>My Custom 405 Page</h1>");
     });
 
+    // 测试自定义路由组
+    auto group1 = app.group("/group1");
+
+    // 单独设置组中间件
+    group1.use([](Context& ctx) {
+        LOG_INFO("组中间件被执行，路径为{}", ctx.req().url());
+        ctx.next();
+    });
+
+    group1.GET("/hello", [](Context& ctx) {
+        ctx.STR(HttpStatusCode::k200Ok, "Hello from group1!");
+    });
+
+    group1.GET("/panic", [](Context& ctx) {
+        throw std::runtime_error("组内故意抛出异常");
+    });
 
     app.start();
 
