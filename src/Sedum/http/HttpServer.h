@@ -11,7 +11,6 @@
 #include "HttpRequest.h"
 #include "base/NonCopyable.h"
 #include "net/TcpServer.h"
-
 namespace fleabane {
     class InetAddress;
     class EventLoop;
@@ -19,6 +18,9 @@ namespace fleabane {
     class HttpRequest;
     class HttpResponse;
     class HttpContext;
+}
+namespace sedum {
+    using namespace fleabane;
 
     class HttpServer : NonCopyable {
     public:

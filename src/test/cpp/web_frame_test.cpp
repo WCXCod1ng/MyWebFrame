@@ -5,7 +5,7 @@
 
 #include <jwt-cpp/traits/kazuho-picojson/defaults.h>
 
-#include "../../Fleabane/http/HttpResponse.h"
+#include "../../Sedum/http/HttpResponse.h"
 #include "../../Fleabane/log/Logger.h"
 #include "../../Fleabane/net/InetAddress.h"
 #include "../../Sedum/Context.h"
@@ -54,12 +54,12 @@ void auth_middleware(Context& ctx) {
                 ctx.set("user_id", user_id);
             } catch (const std::exception& e) {
                 // 校验失败
-                ctx.STR(fleabane::HttpStatusCode::k403Forbidden, "wrong authorization");
+                ctx.STR(HttpStatusCode::k403Forbidden, "wrong authorization");
                 return;
             }
         } else {
             // 403 forbidden
-            ctx.STR(fleabane::HttpStatusCode::k403Forbidden, "without authorization");
+            ctx.STR(HttpStatusCode::k403Forbidden, "without authorization");
             return;
         }
     }
@@ -98,7 +98,7 @@ int main() {
             .set_expires_at(std::chrono::system_clock::now() + std::chrono::seconds(3600)) // 设置超时时间为1小时
             .set_payload_claim("user_id", jwt::claim(std::string("12345")))
             .sign(jwt::algorithm::hs256{secret});
-        ctx.STR(fleabane::HttpStatusCode::k200Ok, token);
+        ctx.STR(HttpStatusCode::k200Ok, token);
     });
 
     // 测试请求级作用域变量传递

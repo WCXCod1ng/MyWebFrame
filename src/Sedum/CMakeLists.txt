@@ -1,9 +1,18 @@
 set(LIBRARY_SOURCES
-        WebFrame.cpp
-        WebRouter.cpp
-        pool/mysql_connection_pool.cpp
-        RouterGroup.h
+        http/HttpContext.cpp
+        http/HttpContext.h
+        http/HttpTypes.h
+        http/HttpRequest.h
+        http/HttpResponse.h
+        http/HttpServer.h
+        http/HttpServer.cpp
         RouterGroup.cpp
+        RouterGroup.h
+        WebFrame.cpp
+        WebFrame.h
+        WebRouter.cpp
+        WebRouter.h
+        Context.h
         Define.h
 )
 

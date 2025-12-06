@@ -11,6 +11,9 @@
 #include "base/NonCopyable.h"
 namespace fleabane {
     class Buffer;
+}
+namespace sedum {
+    using namespace fleabane;
 
     // 常见状态码枚举
     enum class HttpStatusCode {

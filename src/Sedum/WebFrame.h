@@ -131,7 +131,7 @@ namespace sedum {
 
         /// 核心分发逻辑 (Dispatcher)
         /// 这是所有业务的实际入口，会根据路径选择对应的handler并进行处理
-        void dispatch(const fleabane::TcpConnectionPtr& conn, fleabane::HttpRequest req) {
+        void dispatch(const TcpConnectionPtr& conn, HttpRequest req) {
             // 1. 路由匹配在IO线程中完成
             const auto &path = req.url();
             const auto method = req.method();

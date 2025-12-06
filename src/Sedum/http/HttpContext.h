@@ -5,9 +5,14 @@
 #ifndef HTTPCONTEXT_H
 #define HTTPCONTEXT_H
 #include "HttpRequest.h"
+
 namespace fleabane {
     class TimeStamp;
     class Buffer;
+}
+
+namespace sedum {
+    using namespace fleabane;
 
     class HttpContext {
     public:

@@ -8,7 +8,9 @@
 
 // static constexpr char kCLRF[] = "\r\n";
 
-namespace fleabane {
+namespace sedum {
+    using namespace fleabane;
+
     const std::string HttpContext::kCLRF = "\r\n";
 
     // 核心解析函数

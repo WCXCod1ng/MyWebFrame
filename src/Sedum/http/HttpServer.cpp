@@ -9,7 +9,7 @@
 #include "log/Logger.h"
 #include "net/TcpConnection.h"
 
-namespace fleabane {
+namespace sedum {
     // 默认的 HTTP 回调（如果用户没设置）
     void defaultHttpCallback(const TcpConnectionPtr& conn, HttpRequest request) {
         HttpResponse resp {true};

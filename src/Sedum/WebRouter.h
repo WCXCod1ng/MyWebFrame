@@ -13,10 +13,12 @@
 #include "Context.h"
 #include "Define.h"
 
-/// 注意这里对 fleabane::Method 进行了前向声明，让编译器知道它是一个枚举类
-namespace fleabane {enum class Method;}
 
 namespace sedum {
+
+    /// 注意这里对 Method 进行了前向声明，让编译器知道它是一个枚举类
+    enum class Method;
+
     using namespace fleabane;
     enum class RouteStatus {
         FOUND = 0, // 找到

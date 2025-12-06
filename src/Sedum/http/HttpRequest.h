@@ -10,7 +10,16 @@
 
 #include "base/NonCopyable.h"
 #include "base/TimeStamp.h"
+
 namespace fleabane {
+	class Buffer;
+    class NonCopyable;
+    class TimeStamp;
+}
+
+namespace sedum {
+    using namespace fleabane;
+
     /// 定义该HTTPConnection所支持的请求方法，暂时只支持GET和POST两种
     enum class Method {
         kInvalid, kGet, kPost, kHead, kPut, kDelete
@@ -20,10 +29,6 @@ namespace fleabane {
     enum class Version {
         kUnknown, kHttp10, kHttp11
     };
-
-    class Buffer;
-    class NonCopyable;
-    class TimeStamp;
 
     class HttpRequest : NonCopyable {
     public:
