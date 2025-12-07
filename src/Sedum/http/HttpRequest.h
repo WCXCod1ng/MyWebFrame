@@ -22,7 +22,7 @@ namespace sedum {
 
     /// 定义该HTTPConnection所支持的请求方法，暂时只支持GET和POST两种
     enum class Method {
-        kInvalid, kGet, kPost, kHead, kPut, kDelete
+        kInvalid, kGet, kPost, kHead, kPut, kDelete, kOptions
     };
 
     /// HTTP 版本，目前仅考虑HTTP1.x
@@ -89,13 +89,33 @@ namespace sedum {
 
         /// 设置查询参数
         void setQueries(const char * start, const char * end) {
-            // 调用内部的解析逻辑进行处理
-            parse_queries(std::string_view(start, end));
+            // 调用内部的解析逻辑进行处理，并把结果存储到queries中
+            parse_queries(std::string_view(start, end), queries_);
         }
 
         /// 获取所有查询参数
         const std::unordered_map<std::string, std::string>& getQueries() const {
-            return queries;
+            return queries_;
+        }
+
+        /// 解析表单数据
+        void parseFormData() {
+            if(method_ != Method::kPost) {
+                return; // 仅处理POST请求
+            }
+            auto ct = getHeader("Content-Type");
+            if(!ct.empty() && ct == "application/x-www-form-urlencoded") {
+                // 解析body中的表单数据，直接复用之前的解析函数，并将结果存储到form_data_中
+                parse_queries(std::string_view(body_.data(), body_.size()), form_data_);
+            }
+        }
+
+        /// 获取表单数据
+        const std::unordered_map<std::string, std::string>& getFormData() {
+            if(form_data_.empty()) {
+                parseFormData();
+            }
+            return form_data_;
         }
 
         /// 设置接收时间
@@ -148,7 +168,7 @@ namespace sedum {
             std::swap(method_, that.method_);
             std::swap(version_, that.version_);
             url_.swap(that.url_);
-            queries.swap(that.queries);
+            queries_.swap(that.queries_);
             receiveTime_.swap(that.receiveTime_);
             headers_.swap(that.headers_);
             body_.swap(that.body_); // 如果有 body 的话
@@ -157,7 +177,9 @@ namespace sedum {
     private:
 
         /// 内部函数，专用于解析查询参数
-        bool parse_queries(std::string_view query_string) {
+        /// @param query_string 格式类似于 key1=value1&key2=value2&key3=value3
+        /// @param res 查询参数存储的结果
+        static bool parse_queries(std::string_view query_string, std::unordered_map<std::string, std::string>& res) {
             std::size_t start = 0;
             while(start < query_string.size()) {
                 std::size_t ampersand_pos = query_string.find_first_of('&', start);
@@ -194,8 +216,8 @@ namespace sedum {
                 auto key = url_decode(key_sv);
                 auto value = url_decode(value_sv);
 
-                // 加入到查询参数集合中
-                queries[std::move(key)] = std::move(value);
+                // 加入到结果中
+                res[std::move(key)] = std::move(value);
             }
 
             return true; // 除非未来有严格的格式要求，否则总是返回 true
@@ -205,7 +227,8 @@ namespace sedum {
         Method method_; // 请求方式
         Version version_; // 协议版本
         std::string url_;  // 资源路径
-        std::unordered_map<std::string, std::string> queries; // 查询参数
+        std::unordered_map<std::string, std::string> queries_; // 查询参数
+        std::unordered_map<std::string, std::string> form_data_; // 表单数据
         TimeStamp receiveTime_; // 请求到达时间
         std::unordered_map<std::string, std::string> headers_; // 请求头
         std::string body_; // 请求体

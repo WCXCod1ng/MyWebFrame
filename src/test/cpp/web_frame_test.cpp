@@ -18,6 +18,34 @@ using namespace sedum;
 
 const std::string secret = "my-secret";
 
+struct JsonObject {
+    std::string name;
+    int age;
+};
+
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(JsonObject, name, age); // 使用nlohmann/json定义序列化和反序列化
+
+/// 解决跨域问题的中间件
+void CorsMiddleware(Context& ctx) {
+    // 1. 设置允许跨域的 Header
+    ctx.resp().addHeader("Access-Control-Allow-Origin", "*"); // 生产环境建议指定具体域名
+    ctx.resp().addHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With");
+    ctx.resp().addHeader("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE");
+    ctx.resp().addHeader("Access-Control-Max-Age", "3600"); // 预检请求缓存时间
+
+    // 2. 处理预检请求 (OPTIONS)
+    if (ctx.req().method() == Method::kOptions) {
+        // 对于 OPTIONS 请求，直接返回 204 No Content，并终止后续处理
+        ctx.resp().setStatusCode(HttpStatusCode::k204NoContent);
+        // [关键] 中断洋葱模型，不进入业务逻辑
+        return;
+    }
+
+    // 3. 非 OPTIONS 请求，继续执行业务逻辑
+    ctx.next();
+}
+
+
 // 记录执行时间的中间件
 void execution_time_middleware(Context& ctx) {
     // 使用单调时钟记录处理本次请求的时间
@@ -83,6 +111,8 @@ int main() {
 
     const InetAddress addr(9006);
     WebFrame app(addr, "SmartWeb");
+
+    // app.use(CorsMiddleware);
 
     auto user_group = app.group("/user");
 
@@ -179,6 +209,33 @@ int main() {
     });
     subgroup1.GET("/hello", [](Context& ctx) {
         ctx.STR(HttpStatusCode::k200Ok, "Hello from subgroup1!");
+    });
+
+    // 测试form-data解析
+    app.POST("/form", [](Context& ctx) {
+        const auto& form_data = ctx.req().getFormData();
+        std::string response = "Received form data:\n";
+        for (const auto& [key, value] : form_data) {
+            response += key + ": " + value + "\n";
+        }
+        ctx.STR(HttpStatusCode::k200Ok, response);
+    });
+
+    // 测试JSON解析
+    app.POST("/json", [](Context& ctx) {
+        try {
+            auto json_body = ctx.bindJSON<JsonObject>();
+            if(!json_body) {
+                ctx.STR(HttpStatusCode::k400BadRequest, "Invalid JSON data");
+                return;
+            }
+            std::string response = "Received JSON data:\n";
+            response += "Name: " + json_body->name + "\n";
+            response += "Age: " + std::to_string(json_body->age) + "\n";
+            ctx.STR(HttpStatusCode::k200Ok, response);
+        } catch (const std::exception& e) {
+            ctx.STR(HttpStatusCode::k400BadRequest, "Invalid JSON format");
+        }
     });
 
     app.start();

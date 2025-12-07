@@ -13,7 +13,8 @@ set(LIBRARY_SOURCES
         WebRouter.cpp
         WebRouter.h
         Context.h
-        Define.h
+        common/Define.h
+        common/JsonUtil.h
 )
 
 add_library(Sedum ${LIBRARY_SOURCES})

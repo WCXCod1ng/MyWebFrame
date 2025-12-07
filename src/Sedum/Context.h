@@ -9,7 +9,8 @@
 #include <http/HttpResponse.h>
 #include <net/Callbacks.h>
 #include <net/TcpConnection.h>
-#include "Define.h"
+#include "common/Define.h"
+#include "common/JsonUtil.h"
 
 namespace sedum {
     using namespace fleabane;
@@ -23,7 +24,7 @@ namespace sedum {
         using HandlerFunc = common::HandlerFunc;
 
 
-        Context(std::vector<HandlerFunc> handlersChain, const fleabane::TcpConnectionPtr& conn, HttpRequest&& req,
+        Context(std::vector<HandlerFunc> handlersChain, const TcpConnectionPtr& conn, HttpRequest&& req,
                 std::unordered_map<std::string, std::string> params)
             : handlersChain_(std::move(handlersChain))
               ,conn_(conn), // 引用计数+1
@@ -97,13 +98,51 @@ namespace sedum {
             return std::nullopt;
         }
 
-        /// 获取查询参数 ?name=abc -> query("name") == abc
+        /// 获取查询参数 (适用于 ?key=value 格式)
+        /// ?name=abc -> query("name") == abc
         std::optional<std::string> query(const std::string& key) const {
             const auto &queries = req_.getQueries();
             if(const auto it = queries.find(key); it != queries.end()) {
                 return it->second;
             }
             return std::nullopt;
+        }
+
+        /// 获取表单参数 (适用于请求体的类型是 application/x-www-form-urlencoded)
+        std::optional<std::string> form(const std::string& key) {
+            const auto &form_data = req_.getFormData();
+            if(const auto it = form_data.find(key); it != form_data.end()) {
+                return it->second;
+            }
+            return std::nullopt;
+        }
+
+        /// 获取JSON参数 (适用于请求体的类型是 application/json)
+        template <typename T>
+        std::optional<T> bindJSON() const {
+            try {
+                return common::JsonUtil::fromJson<T>(req_.getBody());
+            } catch (const std::exception&) {
+                return std::nullopt;
+            }
+        }
+
+        /// 根据Content-Type解析form-data或json参数
+        template <typename T>
+        std::optional<T> bind() const {
+            const auto content_type = req_.getHeader("Content-Type");
+            if (content_type == "application/x-www-form-urlencoded") {
+                // 解析form-data
+                try {
+                    return common::JsonUtil::fromJson<T>(req_.getBody());
+                } catch (const std::exception&) {
+                    return std::nullopt;
+                }
+            } else if (content_type == "application/json") {
+                // 解析JSON，调用bindJSON
+                return bindJSON<T>();
+            }
+            return std::nullopt; // 不支持的Content-Type
         }
 
         /// 获取请求头
@@ -118,7 +157,7 @@ namespace sedum {
 
 
         // 获取原始请求体
-        const HttpRequest& req() const { return req_; }
+        HttpRequest& req() { return req_; }
         // 获取原始响应体
         HttpResponse& resp() { return resp_; }
 
@@ -155,7 +194,8 @@ namespace sedum {
 
         // HTML, File 等辅助方法...
 
-        // 新增一个关键函数：需要在用户handler调用完毕后通过它来写回数据，实现了HttpServer的后半部分内容
+        /// 新增一个关键函数：需要在用户handler调用完毕后通过它来写回数据，实现了HttpServer的后半部分内容
+        /// 它为业务线程提供了将响应写回IO线程的能力
         void flush() {
             // // 序列化响应并通过网络发送
             // Buffer buf;
@@ -192,7 +232,7 @@ namespace sedum {
         // const HttpRequest& req_;
         // HttpResponse* resp_;
         const TcpConnectionPtr conn_;
-        const HttpRequest req_;
+        HttpRequest req_;
         HttpResponse resp_;
         std::unordered_map<std::string, std::string> params_; // 存储WebRouter解析出来的请求参数，包括路径参数、查询字符串、通配符字符串等
     };
