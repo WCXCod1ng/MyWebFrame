@@ -221,21 +221,23 @@ int main() {
         ctx.STR(HttpStatusCode::k200Ok, response);
     });
 
-    // 测试JSON解析
+    // 测试JSON解析与json响应
     app.POST("/json", [](Context& ctx) {
+        std::optional<JsonObject> json_body;
         try {
-            auto json_body = ctx.bindJSON<JsonObject>();
+            json_body = ctx.bindJSON<JsonObject>();
             if(!json_body) {
                 ctx.STR(HttpStatusCode::k400BadRequest, "Invalid JSON data");
                 return;
             }
-            std::string response = "Received JSON data:\n";
-            response += "Name: " + json_body->name + "\n";
-            response += "Age: " + std::to_string(json_body->age) + "\n";
-            ctx.STR(HttpStatusCode::k200Ok, response);
         } catch (const std::exception& e) {
             ctx.STR(HttpStatusCode::k400BadRequest, "Invalid JSON format");
+            return;
         }
+        json_body->name = "Server";
+        json_body->age += 1;
+        // ctx.STR(HttpStatusCode::k200Ok, response);
+        ctx.JSON(HttpStatusCode::k200Ok, *json_body);
     });
 
     app.start();

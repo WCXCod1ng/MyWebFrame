@@ -183,6 +183,20 @@ namespace sedum {
             resp_.setBody(jsonStr);
         }
 
+        /// 重载
+        template<typename T>
+        void JSON(const HttpStatusCode code, T&& obj) {
+            resp_.setStatusCode(code);
+            resp_.setContentType("application/json");
+            // 序列化
+            try {
+                resp_.setBody(common::JsonUtil::toJson<T>(std::forward<T>(obj)));
+            } catch (const std::exception& e) {
+                // 序列化失败则触发异常，交给全局异常处理器
+                throw e;
+            }
+        }
+
         /// 以对象方式响应
         /// 内部会自动转化为字符串
         template<typename T>

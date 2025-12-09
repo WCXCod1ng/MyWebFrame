@@ -55,6 +55,7 @@ namespace sedum {
 
         // 设置响应体
         void setBody(const std::string& body) { body_ = body; }
+        void setBody(std::string&& body) {body_ = std::move(body);}
 
         // --- 核心功能：序列化 ---
 
