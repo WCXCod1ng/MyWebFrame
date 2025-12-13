@@ -7,6 +7,7 @@ add_executable(run_tests
         cpp/block_queue_test.cpp
         cpp/logger_test.cpp
         cpp/simple_server_test.cpp
+        cpp/coroutine_example_test.cpp
 )
 target_link_libraries(run_tests
         PRIVATE

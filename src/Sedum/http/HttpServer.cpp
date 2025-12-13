@@ -32,9 +32,10 @@ namespace sedum {
         server_.setConnectionCallback(
             std::bind(&HttpServer::onConnection, this, std::placeholders::_1));
 
-        // 2. 收到数据时 -> onMessage
-        server_.setMessageCallback(
-            std::bind(&HttpServer::onMessage, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+        // note 引入协程后，如下的代码可以被注释掉，因为协程接管了读数据
+        // // 2. 收到数据时 -> onMessage
+        // server_.setMessageCallback(
+        //     std::bind(&HttpServer::onMessage, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
     }
 
     HttpServer::~HttpServer() {
@@ -49,13 +50,74 @@ namespace sedum {
         if (conn->connected()) {
             LOG_INFO("Connection UP : {}", conn->peerAddress().toIpPort());
 
-            // 【关键】为每个新连接创建一个 HttpContext
+            // 1. 为每个新连接创建一个 HttpContext
             // HttpContext 内部包含状态机和 HttpRequest 对象
             // 使用 std::any (setContext) 绑定到 TcpConnection 上
             conn->setContext(std::make_shared<HttpContext>());
+
+            // 2. 【关键】启动协程
+            // handleHttpSession 返回一个 CoTask 对象。
+            // 由于 CoTask 的 promise_type 设置为 initial_suspend = never，
+            // 调用该函数时，协程代码会立即开始执行，直到遇到第一个 co_await recv。
+            // 协程的状态机分配在堆上，即使 handleHttpSession 返回，协程依然存活。
+            handleHttpSession(conn);
         } else {
             LOG_INFO("Connection DOWN : {}", conn->peerAddress().toIpPort());
         }
+    }
+
+    CoTask HttpServer::handleHttpSession(TcpConnectionPtr conn) {
+        // 1. 取出该连接对应的解析器 (Context)
+        // 此时 context 可能是“全新的”，也可能是“解析了一半的”（针对分包情况）
+        const auto context = conn->getContextValue<std::shared_ptr<HttpContext>>();
+
+        // 准备缓冲区（可以使用 conn 自带的 inputBuffer，也可以用局部 Buffer）
+        // 这里假设我们定义一个局部的 Buffer 用于接收数据。
+        Buffer buf;
+
+        // 现在我们主动模拟HttpContext的状态机（之前是通过onMessage进行模拟）
+        while(true) {
+            // 1. 【挂起】主动拉取数据
+            // 如果没有数据，协程挂起，控制权回到 EventLoop
+            // 如果有数据（或出错），协程恢复
+            ssize_t n = co_await conn->recv(&buf);
+
+            if (n > 0) {
+                // important!!! 有数据，就相当于之前的onMessage被调用了
+                // 2. 解析 HTTP
+                // parseRequest 逻辑与 onMessage 类似，但这里是在协程上下文中
+                if (!context->parseRequest(&buf, TimeStamp::now())) {
+                    conn->send("HTTP/1.1 400 Bad Request\r\n\r\n");
+                    conn->forceClose();
+                    co_return; // 退出协程
+                }
+
+                if (context->gotAll()) {
+                    // 3. 分发请求
+                    // 将 Request 移交给业务层 (WebFrame)
+                    // 这里调用 onRequest，它内部会调用 httpCallback_ -> WebFrame::dispatch
+                    // 此时代码依然运行在 IO 线程中
+                    onRequest(conn, std::move(context->request()));
+
+                    // 4. 重置状态机，准备处理下一个 Keep-Alive 请求
+                    context->reset();
+                }
+            }
+            else if (n == 0) {
+                // important!!! 这里实际上模拟的是回调方式中TcpConnection::handleChannelClose()被触发
+                // 对端关闭
+                conn->forceClose(); // 触发清理流程
+                break;
+            }
+            else {
+                // important!!! 这里实际上模拟的是回调方式中TcpConnection::handleChannelError()被触发
+                // 出错
+                conn->forceClose();
+                break;
+            }
+        }
+
+        co_return;
     }
 
     void HttpServer::onMessage(const TcpConnectionPtr& conn, Buffer* buf, TimeStamp receiveTime) {

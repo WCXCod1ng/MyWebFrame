@@ -10,16 +10,18 @@
 
 #include "HttpRequest.h"
 #include "base/NonCopyable.h"
+#include "coroutine/CoTask.h"
 #include "net/TcpServer.h"
 namespace fleabane {
     class InetAddress;
     class EventLoop;
+}
+namespace sedum {
     // 前向声明
     class HttpRequest;
     class HttpResponse;
     class HttpContext;
-}
-namespace sedum {
+
     using namespace fleabane;
 
     class HttpServer : NonCopyable {
@@ -57,8 +59,18 @@ namespace sedum {
     private:
         /// [内部回调] 当 TcpServer 有新连接时
         /// 当 TCP 三次握手完成后触发，会初始化HttpContext，使用上下文的原因是因为TCP协议是字节流，一个TCP连接上可能会跑多个HTTP请求
+        ///
+        /// 当引入协程后，我们需要在连接建立时启动协程主动进行处理（而非再通过onMessage来被动处理了），
+        /// 而OnConnection将来会被注册为TcpServer::ConnectionCallback，所以我们在这里
         void onConnection(const TcpConnectionPtr& conn);
 
+        /// 引入协程后新增的逻辑处理函数，它将来会：
+        /// 1. 主动读取数据到缓冲区中
+        /// 2. 取代onMessage追踪协议解析的状态
+        CoTask handleHttpSession(TcpConnectionPtr conn);
+
+        /// @deprecated 引入协程后，该回调不应当被使用，而是在主动处理函数（handleHttpSession）中使用
+        ///
         /// [内部回调] 当 TcpServer 收到数据时
         /// 核心逻辑：驱动 HttpContext 状态机解析数据
         /// 1. 从 context 里恢复上次的解析状态。

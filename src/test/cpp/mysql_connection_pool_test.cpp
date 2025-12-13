@@ -10,6 +10,9 @@
 #include <sstream>
 
 using namespace sedum;
+namespace sedum {
+    class mysql_conn_pool;
+}
 
 // --- 测试固件 (Test Fixture) ---
 // 用于管理测试的通用设置和清理工作

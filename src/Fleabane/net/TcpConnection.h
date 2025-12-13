@@ -9,11 +9,14 @@
 #include <memory>
 
 #include "Callbacks.h"
+#include "Channel.h"
 #include "InetAddress.h"
 #include "TimerId.h"
 #include "base/Buffer.h"
 #include "base/NonCopyable.h"
 #include "base/TimeStamp.h"
+#include "coroutine/CoTask.h"
+#include "coroutine/IoAwaiter.h"
 
 namespace fleabane {
     class Channel;
@@ -58,6 +61,12 @@ namespace fleabane {
         void send(const void* message, size_t len);
         void send(Buffer* buf);
 
+        /// @brief 协程接收数据接口
+        /// 用法: ssize_t n = co_await conn->recv(&buf);
+        /// @param buf 用户提供的缓冲区 (或者是内部的 inputBuffer_)
+        /// @return CoTask<ssize_t> 返回读取的字节数
+        IoAwaiter recv(Buffer *buf);
+
         // --- 连接控制接口 ---
         // 关闭连接（优雅关闭：发送完缓冲区数据后关闭写端）
         void shutdown();
@@ -67,12 +76,26 @@ namespace fleabane {
 
         // --- 回调注册接口 ---
         void setConnectionCallback(const ConnectionCallback& cb) { connectionCallback_ = cb; }
+        /// @deprecated 在引入协程后，被废弃
         void setMessageCallback(const MessageCallback& cb) { messageCallback_ = cb; }
         void setWriteCompleteCallback(const WriteCompleteCallback& cb) { writeCompleteCallback_ = cb; }
         void setCloseCallback(const CloseCallback& cb) { closeCallback_ = cb; }
         void setHighWaterMarkCallback(const HighWaterMarkCallback& cb, size_t highWaterMark) {
             highWaterMarkCallback_ = cb; highWaterMark_ = highWaterMark;
         }
+
+        /// 内部使用：设置协程唤醒回调
+        /// 当 Channel 触发读事件时，如果设置了这个回调，就调用它（通常是 resume 协程）
+        /// 而不是去执行常规的 handleChannelRead 读取流程
+        /// @param cb 包含handle.resume()逻辑的回调函数
+        void setCoroutineCallback(std::function<void()> cb) {
+            coroutineCallback_ = std::move(cb);
+        }
+
+        /// 暴露 fd 给 Awaiter 使用 (如果 socket_ 是 private 的)
+        int fd() const; // 需要实现这个 helper
+
+        void enableReading() { channel_->enableReading(); }
 
         // --- 内部生命周期管理 (由 TcpServer 调用) ---
         // 连接建立时的 hook
@@ -114,6 +137,7 @@ namespace fleabane {
 
         // --- 为Channel准备的事件回调函数组---
         /// Channel中可读事件触发时执行的回调
+        /// 在引入协程后，我们需要对handleChannelRead进行改动
         void handleChannelRead(TimeStamp receiveTime);
         void handleChannelWrite();
         void handleChannelClose();
@@ -162,6 +186,9 @@ namespace fleabane {
         WriteCompleteCallback writeCompleteCallback_; // 消息发送完毕回调
         HighWaterMarkCallback highWaterMarkCallback_; // 高水位回调
         CloseCallback closeCallback_;                 // 内部关闭（被动）回调（通知 TcpServer 移除自己）
+        /// 新增协程回调
+        /// 如果它不为空，说明当前有一个协程正在co_await等待数据
+        CoroutineCallback coroutineCallback_;
 
         // 缓冲区
         size_t highWaterMark_; // 高水位阈值 (默认 64MB)

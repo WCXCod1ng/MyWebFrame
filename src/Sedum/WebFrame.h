@@ -4,6 +4,7 @@
 
 #ifndef WEBFRAME_H
 #define WEBFRAME_H
+#include <csignal>
 #include <functional>
 #include <base/ThreadPool.h>
 #include <http/HttpServer.h>
@@ -58,6 +59,8 @@ namespace sedum {
 
         /// 启动服务
         void start() {
+            // 禁止忽略信号（用于调试）
+            signal(SIGPIPE, SIG_IGN);
             // 启动HetpServer
             server_.start();
             // 启动主事件循环

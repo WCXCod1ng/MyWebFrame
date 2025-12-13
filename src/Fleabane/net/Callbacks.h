@@ -42,5 +42,8 @@ namespace fleabane {
 
     // 6. 定时器回调
     using TimerCallback = std::function<void()>;
+
+    // 7. 协程回调
+    using CoroutineCallback = std::function<void()>;
 }
 #endif //CALLBACKS_H

@@ -3,9 +3,9 @@
 #include <iostream>
 #include <string>
 #include <pthread.h>
-#include "../../Fleabane/http/HttpRequest.h"
-#include "../../Fleabane/http/HttpResponse.h"
-#include "../../Fleabane/http/HttpServer.h"
+#include "../../Sedum/http/HttpRequest.h"
+#include "../../Sedum/http/HttpResponse.h"
+#include "../../Sedum/http/HttpServer.h"
 #include "../../Fleabane/net/EventLoop.h"
 #include "../../Fleabane/log/Logger.h"
 #include "../../Fleabane/base/utils.h"
@@ -13,9 +13,10 @@
 #include "../../Fleabane/net/TcpServer.h"
 #include <source_location>
 
+#include "Context.h"
 #include "../../Fleabane/log/ConsoleSink.h"
 
-using namespace fleabane;
+using namespace sedum;
 namespace fs = std::filesystem;
 
 // MIME Type 映射
@@ -169,7 +170,6 @@ int main(int argc, char* argv[]) {
     EventLoop loop;
     current_thread::set_name("HS-main"); // 设置当前线程的名称
 
-    signal(SIGPIPE, SIG_IGN);
 
     // 2. 设置监听地址
     const InetAddress addr(port);

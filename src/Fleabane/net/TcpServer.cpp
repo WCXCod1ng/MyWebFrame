@@ -120,6 +120,7 @@ namespace fleabane {
 
         // 6. 设置用户回调
         conn->setConnectionCallback(connectionCallback_);
+        // note 实际上协程模式下用不到
         conn->setMessageCallback(messageCallback_);
         conn->setWriteCompleteCallback(writeCompleteCallback_);
 
