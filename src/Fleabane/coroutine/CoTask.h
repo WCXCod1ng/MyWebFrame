@@ -28,6 +28,7 @@ namespace fleabane {
     ///     co_await promise.final_suspend(); // 4. 最终挂起（我们选了 never，自动销毁）
     /// }
     ///
+    /// 协程的优势不在于“单个请求变快”，而在于**“在资源有限的情况下，能同时处理的请求数量极大增加”**
     struct CoTask {
         struct promise_type;
         using handle_type = std::coroutine_handle<promise_type>;

@@ -16,6 +16,8 @@ set(LIBRARY_SOURCES
         common/Define.h
         common/JsonUtil.h
         pool/mysql_connection_pool.cpp
+        common/ObjectPool.h
+        common/ConcurrentObjectPool.h
 )
 
 add_library(Sedum ${LIBRARY_SOURCES})

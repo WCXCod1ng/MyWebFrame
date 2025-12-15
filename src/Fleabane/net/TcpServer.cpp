@@ -33,8 +33,6 @@ namespace fleabane {
           name_(nameArg),
           acceptor_(new Acceptor(loop, listenAddr, option == kReusePort)),
           threadPool_(std::make_unique<EventLoopThreadPool>(loop, numThreads, name_)), // 使用TcpServer的名称作为线程池的名称（前缀）
-          connectionCallback_(),
-          messageCallback_(),
           nextConnId_(1),
           started_(0),
           idleTimeoutSeconds_(idleTimeoutSeconds)

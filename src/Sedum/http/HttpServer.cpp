@@ -10,6 +10,12 @@
 #include "net/TcpConnection.h"
 
 namespace sedum {
+
+    /// 这里不能简单地直接使用无锁的对象池，因为虽然TcpConnection是IO线程唯一的，但是TcpServer会管理多个TcpConnection，这意味着它提供的回调可能会被多个线程并发执行，
+    /// 相应地，HttpServer也是存在多个线程并发执行其中的函数的情况，所以我们要加锁。
+    /// 或者可以使用另一种方式：因为IO线程自从服务启动后就不会被销毁和新建，所以我们完全可以创建一个线程局部的对象池，这种情况下也能使用无锁的对象池
+    static thread_local common::ObjectPool<HttpContext> t_httpContextPool;
+
     // 默认的 HTTP 回调（如果用户没设置）
     void defaultHttpCallback(const TcpConnectionPtr& conn, HttpRequest request) {
         HttpResponse resp {true};
@@ -33,9 +39,9 @@ namespace sedum {
             std::bind(&HttpServer::onConnection, this, std::placeholders::_1));
 
         // note 引入协程后，如下的代码可以被注释掉，因为协程接管了读数据
-        // // 2. 收到数据时 -> onMessage
-        // server_.setMessageCallback(
-        //     std::bind(&HttpServer::onMessage, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+        // 2. 收到数据时 -> onMessage
+        server_.setMessageCallback(
+            std::bind(&HttpServer::onMessage, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
     }
 
     HttpServer::~HttpServer() {
@@ -53,14 +59,14 @@ namespace sedum {
             // 1. 为每个新连接创建一个 HttpContext
             // HttpContext 内部包含状态机和 HttpRequest 对象
             // 使用 std::any (setContext) 绑定到 TcpConnection 上
-            conn->setContext(std::make_shared<HttpContext>());
+            conn->setContext(t_httpContextPool.acquire());
 
-            // 2. 【关键】启动协程
-            // handleHttpSession 返回一个 CoTask 对象。
-            // 由于 CoTask 的 promise_type 设置为 initial_suspend = never，
-            // 调用该函数时，协程代码会立即开始执行，直到遇到第一个 co_await recv。
-            // 协程的状态机分配在堆上，即使 handleHttpSession 返回，协程依然存活。
-            handleHttpSession(conn);
+            // // 2. 【关键】启动协程
+            // // handleHttpSession 返回一个 CoTask 对象。
+            // // 由于 CoTask 的 promise_type 设置为 initial_suspend = never，
+            // // 调用该函数时，协程代码会立即开始执行，直到遇到第一个 co_await recv。
+            // // 协程的状态机分配在堆上，即使 handleHttpSession 返回，协程依然存活。
+            // handleHttpSession(conn);
         } else {
             LOG_INFO("Connection DOWN : {}", conn->peerAddress().toIpPort());
         }

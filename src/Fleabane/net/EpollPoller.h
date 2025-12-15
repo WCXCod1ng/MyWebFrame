@@ -21,6 +21,8 @@ namespace fleabane {
      * 只有 EventLoop 拥有 Poller 的实例，且生命周期与 EventLoop 一致。
      * 所以 Poller 内部不需要使用 shared_ptr 来管理 Channel，
      * 因为 Channel 的生命周期由 TcpConnection 持有，肯定比 Poller 长（在处理事件时）。
+     *
+     * EpollPoller在构造函数中使用epoll_create创建一个epoll，要想操作它（epoll_ctl）必须通过EpollPoller提供的updateChannel
      */
     class EpollPoller : NonCopyable {
     public:

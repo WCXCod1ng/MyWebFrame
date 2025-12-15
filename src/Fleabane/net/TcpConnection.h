@@ -37,6 +37,8 @@ namespace fleabane {
      * 继承 enable_shared_from_this 的原因：
      * 我们需要在回调函数中（比如 runInLoop）传递当前对象的 shared_ptr，
      * 保证在回调执行期间对象不被销毁。
+     *
+     * 一个TcpConnection对象，从它被创建并分配给某个EventLoop开始，直到它销毁，所有的IO时间处理（读、写、错误、关闭）都在同一个IO线程中执行
      */
     class TcpConnection : NonCopyable, public std::enable_shared_from_this<TcpConnection> {
     public:
@@ -75,6 +77,7 @@ namespace fleabane {
         void forceClose();
 
         // --- 回调注册接口 ---
+        // 如下的回调也保证都会在同一个IO线程中进行处理
         void setConnectionCallback(const ConnectionCallback& cb) { connectionCallback_ = cb; }
         /// @deprecated 在引入协程后，被废弃
         void setMessageCallback(const MessageCallback& cb) { messageCallback_ = cb; }
@@ -163,6 +166,7 @@ namespace fleabane {
         /// 一个EventLoop在运行期间可以管理成千上万的TcpConnection，但一个TcpConnection在其整个生命周期内只属于一个EventLoop，该TcpConnection归属于哪个EventLoop，是咋accept之后就确定好的了（之后永远不变）
         /// note 这里不能替换为引用，因为在极端情况下TcpConnection的生命周期比EventLoop还要长，这实际上是逻辑错误（编译器会假设引用在其生命周期内一直有效，可能会导致错误的优化）；而使用指针时，只是野指针，编译器允许这种行为
         /// 因为TcpConnection是shared_ptr，而它所属的EventLoop只是一个线程栈上的对象，在该EventLoop析构之后，该TcpConnection可能会因为回调而被其他线程持有，这样就造成了TcpConnection生命周期长于所属的EventLoop的现象
+        /// 注意，这里最好加上顶层const修饰，因为它表达了一个含义：ioLoop_的值一旦被初始化就永远不能再被赋值，这是因为一个TcpConnection一旦被创建就和传入的EventLoop永远关联起来了
         EventLoop* const ioLoop_;
         // 名称
         const std::string name_;

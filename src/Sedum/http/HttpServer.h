@@ -10,6 +10,7 @@
 
 #include "HttpRequest.h"
 #include "base/NonCopyable.h"
+#include "common/ObjectPool.h"
 #include "coroutine/CoTask.h"
 #include "net/TcpServer.h"
 namespace fleabane {

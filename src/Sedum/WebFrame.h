@@ -15,6 +15,7 @@
 #include "net/InetAddress.h"
 #include "common/Define.h"
 #include "WebRouter.h"
+#include "common/ConcurrentObjectPool.h"
 
 namespace sedum {
     using namespace fleabane;
@@ -38,6 +39,7 @@ namespace sedum {
         WebFrame(const InetAddress& addr, const std::string& name)
             : baseLoop_(),
               businessPool_(8, 1000, name), // 设置业务线程池的线程数为8，最大任务数为1000
+              // server_(&baseLoop_, addr, "ioloop", TcpServer::kReusePort, 0),
               server_(&baseLoop_, addr, "ioloop"),
               rootGroup_("/", router_) // 管理一个根路由组，它匹配的前缀是“/”
         // 设置ioloop的线程数为8
@@ -114,7 +116,7 @@ namespace sedum {
 
         /// 自定义全局异常处理
         /// 注意：异常处理器的签名多了一个 exception 参数
-        using ExceptionHandler = std::function<void(Context&, const std::exception&)>;
+        using ExceptionHandler = common::ExceptionHandler;
         void setExceptionHandler(ExceptionHandler handler) {
             exceptionHandler_ = std::move(handler);
         }
@@ -134,74 +136,26 @@ namespace sedum {
 
         /// 核心分发逻辑 (Dispatcher)
         /// 这是所有业务的实际入口，会根据路径选择对应的handler并进行处理
-        void dispatch(const TcpConnectionPtr& conn, HttpRequest req) {
-            // 1. 路由匹配在IO线程中完成
-            const auto &path = req.url();
-            const auto method = req.method();
-            // 调用底层的路由组件查找路由
-            auto [status, chain, params] = router_.findRoute(path, method);
+        void dispatch(const TcpConnectionPtr& conn, HttpRequest req);
 
-            // 2. 确定最终要执行的handler（考虑路由失败的问题）
-            HandlersChain targetChain;
-            if (status == RouteStatus::FOUND) {
-                targetChain = std::move(chain);
-            } else if (status == RouteStatus::NOT_FOUND_METHOD) {
-                targetChain = {methodNotAllowedHandler_}; // 注意不能使用移动，否则第二次执行到此就会失效
-            } else {
-                targetChain = {notFoundHandler_};
-            }
-
-            // 3. 将所有需要的数据打包进 Lambda，扔进线程池
-            // 注意：req 使用 std::move 移动进 lambda
-            // conn 是 shared_ptr，拷贝进 lambda 增加引用计数
-            // params 也是移动
-            // chain 是移动，因为我们保证find_route返回的结果是一份拷贝
-            businessPool_.enqueue([this,
-                conn,
-                req = std::move(req),
-                chain = std::move(targetChain),
-                params = std::move(params)]() mutable
-            {
-                // --- 以下代码在 业务线程 中执行 ---
-
-                // 4. 创建 Context (在堆上，shared_ptr)
-                // 将Middleware的引用传入
-                // 将handler移动到Context中，拷贝也可以，但是不能引用，因为handler是栈上的局部变量，dispatch结束后就会析构
-                // 构造时 req 再次 move 进 Context
-                // 创建Context
-                const auto ctx = std::make_shared<Context>(chain, conn, std::move(req), std::move(params));
-
-                // 5. 开始执行洋葱模型，并捕获异常，注意它会捕获中间件和业务handler中的异常
-                try {
-                    ctx->next();
-                } catch (const std::exception& e) {
-                    if (exceptionHandler_) exceptionHandler_(*ctx, e);
-                }
-
-                // 6. 发送响应
-                // 业务逻辑执行完后，主动将 Response 写回
-                ctx->flush();
-            });
+        static void defaultNotFoundHandler(const std::shared_ptr<Context>& ctx) {
+            ctx->resp().setStatusCode(HttpStatusCode::k404NotFound);
+            ctx->resp().setStatusMessage("Not Found");
+            ctx->resp().setBody("404 Not Found");
+            ctx->resp().setCloseConnection(true);
         }
 
-        static void defaultNotFoundHandler(Context& ctx) {
-            ctx.resp().setStatusCode(HttpStatusCode::k404NotFound);
-            ctx.resp().setStatusMessage("Not Found");
-            ctx.resp().setBody("404 Not Found");
-            ctx.resp().setCloseConnection(true);
+        static void defaultMethodNotAllowedHandler(const std::shared_ptr<Context>& ctx) {
+            ctx->resp().setStatusCode(HttpStatusCode::k405MethodNotAllowed);
+            ctx->resp().setStatusMessage("Method Not Allowed");
+            ctx->resp().setBody("405 Method Not Allowed");
+            ctx->resp().setCloseConnection(true); // 发生异常通常建议关闭连接
         }
 
-        static void defaultMethodNotAllowedHandler(Context& ctx) {
-            ctx.resp().setStatusCode(HttpStatusCode::k405MethodNotAllowed);
-            ctx.resp().setStatusMessage("Method Not Allowed");
-            ctx.resp().setBody("405 Method Not Allowed");
-            ctx.resp().setCloseConnection(true); // 发生异常通常建议关闭连接
-        }
-
-        static void defaultExceptionHandler(Context& ctx, const std::exception& e) {
-            ctx.resp().setStatusCode(HttpStatusCode::k500InternalServerError);
-            ctx.resp().setBody(std::string("Internal Server Error: ") + e.what());
-            ctx.resp().setCloseConnection(true); // 发生异常通常建议关闭连接
+        static void defaultExceptionHandler(const std::shared_ptr<Context>& ctx, const std::exception& e) {
+            ctx->resp().setStatusCode(HttpStatusCode::k500InternalServerError);
+            ctx->resp().setBody(std::string("Internal Server Error: ") + e.what());
+            ctx->resp().setCloseConnection(true); // 发生异常通常建议关闭连接
         }
 
         /// 主EventLoop，保证它的生命周期必须最长

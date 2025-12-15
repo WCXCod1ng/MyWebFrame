@@ -174,6 +174,18 @@ namespace sedum {
             body_.swap(that.body_); // 如果有 body 的话
         }
 
+        /// 重置请求体的状态，方便复用
+        void reset() {
+            method_ = Method::kInvalid;
+            version_ = Version::kUnknown;
+            url_.clear();
+            queries_.clear();
+            form_data_.clear();
+            receiveTime_ = TimeStamp::invalid();
+            headers_.clear();
+            body_.clear();
+        }
+
     private:
 
         /// 内部函数，专用于解析查询参数

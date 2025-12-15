@@ -47,7 +47,7 @@ namespace fleabane {
 
             if (numEvents > 0) {
                 // LOG_DEBUG << numEvents << " events happened";
-                auto active_channels = getActiveChannels(numEvents);
+                auto active_channels = std::move(getActiveChannels(numEvents));
 
                 // 策略：如果 vector 满了，说明当前并发很高，扩容两倍
                 if (static_cast<size_t>(numEvents) == events_.size()) {

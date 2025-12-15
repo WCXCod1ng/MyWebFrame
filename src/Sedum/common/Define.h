@@ -13,7 +13,9 @@ namespace sedum { class Context; }
 namespace common {
     /// 定义业务处理函数的签名
     /// 类似于 Spring 中的 Controller 方法
-    using HandlerFunc = std::function<void(sedum::Context&)>;
+    using HandlerFunc = std::function<void(const std::shared_ptr<sedum::Context>&)>;
+    /// 定义异常处理器的签名
+    using ExceptionHandler = std::function<void(std::shared_ptr<sedum::Context>&, const std::exception&)>;
     /// 定义handlers_chain类型：中间件+业务，用以支持像Gin那样的洋葱模型
     using HandlersChain = std::vector<HandlerFunc>;
 }

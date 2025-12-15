@@ -91,6 +91,9 @@ namespace fleabane {
     }
 
     /// 已连接Channel发现可读时实际上会调用该函数，执行实际的读事件
+    ///
+    /// 注意，它必须被执行在所分配的EventLoop所在的线程（所以需要在执行前assertInLoopThread()）
+    ///
     /// 在引入协程后的修改思路：
     /// 1. 优先级判断：当读事件触发时，首先检查是否有挂起的协程（coroutineCallback_ 是否存在）。
     /// 2. 协程分支：如果有协程在等待，我们不读取数据，而是直接执行回调（即 resume 协程）。协程醒来后，会自己在 IoAwaiter::await_resume 中去调用 readFd 读取数据。必须直接 return，防止数据被下面的传统逻辑“偷吃”了。
@@ -103,21 +106,21 @@ namespace fleabane {
         // 有数据来时说明对端还存活，应当刷新定时器
         extendLifetime();
 
-        // 1. 新增协程优先路径
-        if(coroutineCallback_) {
-            LOG_DEBUG("协程模式：唤醒挂起的协程, fd = {}", channel_->fd());
-            // 移动回调所有权，防止重复调用
-            // 这一步很重要：将成员变量置空，表示当前没有协程在等待了
-            auto resume_task = std::move(coroutineCallback_);
-            coroutineCallback_ = nullptr;
-            // 执行 resume，控制权交还给协程
-            // 协程醒来后，会自己在 IoAwaiter::await_resume 中调用 readFd 读取数据
-            resume_task();
-            // 【关键】直接返回！
-            // 千万不要执行下面的 inputBuffer_.readFd，否则数据会被这里读走，
-            // 协程醒来后再读就读不到数据了（EAGAIN），导致逻辑错误。
-            return;
-        }
+        // // 1. 新增协程优先路径
+        // if(coroutineCallback_) {
+        //     LOG_DEBUG("协程模式：唤醒挂起的协程, fd = {}", channel_->fd());
+        //     // 移动回调所有权，防止重复调用
+        //     // 这一步很重要：将成员变量置空，表示当前没有协程在等待了
+        //     auto resume_task = std::move(coroutineCallback_);
+        //     coroutineCallback_ = nullptr;
+        //     // 执行 resume，控制权交还给协程
+        //     // 协程醒来后，会自己在 IoAwaiter::await_resume 中调用 readFd 读取数据
+        //     resume_task();
+        //     // 【关键】直接返回！
+        //     // 千万不要执行下面的 inputBuffer_.readFd，否则数据会被这里读走，
+        //     // 协程醒来后再读就读不到数据了（EAGAIN），导致逻辑错误。
+        //     return;
+        // }
 
         // 2. 【保留】传统回调路径 (Push模型)
         // 如果没有协程在等，说明是旧的 Reactor 模式，走原有流程
@@ -166,6 +169,7 @@ namespace fleabane {
         }
     }
 
+    /// 这样的判断语句还是为了保证，IO写操作也在当初的那个线程中
     void TcpConnection::send(Buffer *buf) {
         if (state_ == kConnected) {
             if (ioLoop_->isInLoopThread()) {
@@ -192,6 +196,9 @@ namespace fleabane {
     }
 
     /// [核心] IO 线程内真正的发送逻辑
+    ///
+    /// 注意，也必须保证在所述的EventLoop所在的线程上被执行
+    ///
     /// 在引入协程后，我们通常也不需要修改写入的逻辑：sendInLoop，因为业务逻辑的读与写通常具有非对称性
     /// - 读 (Read)：业务逻辑通常必须等待数据到达才能继续执行（比如必须读到 HTTP Header 才能解析）。因此我们需要 co_await conn->recv() 来挂起协程。
     /// - 写 (Write)：业务逻辑通常不需要等待数据真正发送到网卡。我们目前的 send 实现采用了 "应用层缓冲 (OutputBuffer)" 机制。当你调用 conn->send(buf) 时，数据只要拷贝到了 outputBuffer_，函数就返回了，协程就可以继续往下跑了。数据的实际发送由底层的 handleChannelWrite 在后台自动完成
@@ -285,6 +292,8 @@ namespace fleabane {
 
     /// 已连接Channel发现可写时实际上会调用该函数，执行实际的写事件
     /// 从Buffer中的“可读区”读取数据并写入socket
+    ///
+    /// 注意，也必须保证在所述的EventLoop所在的线程上被执行
     void TcpConnection::handleChannelWrite()
     {
         ioLoop_->assertInLoopThread();

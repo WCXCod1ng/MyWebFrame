@@ -96,6 +96,15 @@ namespace sedum {
             output->append(body_);
         }
 
+        /// 重置响应体的状态，方面对象池复用
+        void reset() {
+            statusCode_ = HttpStatusCode::kUnknown;
+            statusMessage_.clear();
+            closeConnection_ = false;
+            headers_.clear();
+            body_.clear();
+        }
+
     private:
         /// 状态码
         HttpStatusCode statusCode_;

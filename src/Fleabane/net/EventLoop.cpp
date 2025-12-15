@@ -97,7 +97,7 @@ namespace fleabane {
 
             // 1. 调用 Poller 等待事件
             // 你的 Poller::poll 返回 vector<Channel*>
-            activeChannels_ = poller_->poll();
+            activeChannels_ = std::move(poller_->poll());
 
             const TimeStamp receiveTime = TimeStamp::now();
 

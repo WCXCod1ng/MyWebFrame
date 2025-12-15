@@ -100,7 +100,10 @@ namespace fleabane {
 
         const std::thread::id threadId_; // 记录创建 Loop 的线程 ID
 
-        // 核心组件：Poller
+        /// 注意，每个EventLoop都会创建一个属于它自己的EventPoller
+        /// 而EventPoller是操作内核中epoll的唯一入口，所以当前的EventLoop就和内核的epoll一一绑定了
+        /// 后续会在EventLoop上绑定一个唯一的线程，那么这个线程就和epoll一一绑定了
+        /// Linux内核会维护等待该fd相关事件的线程，当该fd上触发事件时，就会唤醒对应的线程（实际上就是当初绑定的EventLoop线程），所以说只会唤醒当初绑定的那个线程，不会唤醒其他线程（因为其他线程不关心这个fd）
         std::unique_ptr<EpollPoller> poller_;
 
         // --- Wakeup 机制相关 ---

@@ -19,10 +19,11 @@ namespace sedum {
     using ContextPtr = std::shared_ptr<Context>;
 
     /// 暴露给业务端用户使用的Context
-    class Context {
+    class Context : public std::enable_shared_from_this<Context> { // 注意一定要使用public
     public:
         using HandlerFunc = common::HandlerFunc;
 
+        Context() : resp_(true) {}
 
         Context(std::vector<HandlerFunc> handlersChain, const TcpConnectionPtr& conn, HttpRequest&& req,
                 std::unordered_map<std::string, std::string> params)
@@ -31,6 +32,28 @@ namespace sedum {
               req_(std::move(req)),
               resp_(true), // 暂时设置为true，稍后会进行修正
               params_(std::move(params)) {
+
+            // 在这里设置，相当于把onRequest的逻辑放到这里执行
+            const std::string& connection = req_.getHeader("Connection");
+            // 判断是否长连接
+            // HTTP/1.1 默认长连接，除非 Connection: close
+            // HTTP/1.0 默认短连接，除非 Connection: Keep-Alive
+            const bool close = (connection == "close") ||
+                               (req_.getVersion() == Version::kHttp10 && connection != "Keep-Alive");
+            resp_.setCloseConnection(close);
+        }
+
+        /// 由于对象池只能调用默认构造，所以需要提供一个方法来初始化成员变量
+        void init(std::vector<HandlerFunc> handlersChain, const TcpConnectionPtr& conn, HttpRequest&& req,
+                std::unordered_map<std::string, std::string> params) {
+            handlersChain_ = std::move(handlersChain);
+            conn_ = conn; // 引用计数+1
+            req_ = std::move(req);
+            params_ = std::move(params);
+
+            index_ = -1;
+            resp_.reset();
+            variables_.clear();
 
             // 在这里设置，相当于把onRequest的逻辑放到这里执行
             const std::string& connection = req_.getHeader("Connection");
@@ -56,7 +79,7 @@ namespace sedum {
 
             if(index_ < static_cast<int>(handlersChain_.size())) {
                 // 说明没有到结束（后续还有handler），执行它
-                handlersChain_[index_](*this);
+                handlersChain_[index_](shared_from_this());
             }
         }
 
@@ -232,6 +255,17 @@ namespace sedum {
             }
         }
 
+        /// 重置Context的状态，主要是为了支持对象池
+        void reset() {
+            conn_.reset(); // 释放指针
+            handlersChain_.clear();
+            req_.reset(); // 重置请求
+            resp_.reset(); // 重置响应体
+            params_.clear(); // 清空参数
+            variables_.clear(); // 清空作用域级别的变量
+            index_ = -1; // 初始化状态
+        }
+
     private:
 
         /// 中间件
@@ -245,7 +279,7 @@ namespace sedum {
         // 为了在执行业务逻辑时使用的不是IO线程，需要更改Context的声明周期（因为在执行业务逻辑时，IO线程已经执行完毕，之前HttpRequest和HttpResponse都是在IO栈上创建的，随着IO线程函数运行完毕，它们都会被释放）
         // const HttpRequest& req_;
         // HttpResponse* resp_;
-        const TcpConnectionPtr conn_;
+        TcpConnectionPtr conn_;
         HttpRequest req_;
         HttpResponse resp_;
         std::unordered_map<std::string, std::string> params_; // 存储WebRouter解析出来的请求参数，包括路径参数、查询字符串、通配符字符串等
