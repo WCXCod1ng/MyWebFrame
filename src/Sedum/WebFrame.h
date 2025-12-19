@@ -138,21 +138,21 @@ namespace sedum {
         /// 这是所有业务的实际入口，会根据路径选择对应的handler并进行处理
         void dispatch(const TcpConnectionPtr& conn, HttpRequest req);
 
-        static void defaultNotFoundHandler(const std::shared_ptr<Context>& ctx) {
+        static Task<void> defaultNotFoundHandler(const std::shared_ptr<Context>& ctx) {
             ctx->resp().setStatusCode(HttpStatusCode::k404NotFound);
             ctx->resp().setStatusMessage("Not Found");
             ctx->resp().setBody("404 Not Found");
             ctx->resp().setCloseConnection(true);
         }
 
-        static void defaultMethodNotAllowedHandler(const std::shared_ptr<Context>& ctx) {
+        static Task<void> defaultMethodNotAllowedHandler(const std::shared_ptr<Context>& ctx) {
             ctx->resp().setStatusCode(HttpStatusCode::k405MethodNotAllowed);
             ctx->resp().setStatusMessage("Method Not Allowed");
             ctx->resp().setBody("405 Method Not Allowed");
             ctx->resp().setCloseConnection(true); // 发生异常通常建议关闭连接
         }
 
-        static void defaultExceptionHandler(const std::shared_ptr<Context>& ctx, const std::exception& e) {
+        static Task<void> defaultExceptionHandler(const std::shared_ptr<Context>& ctx, const std::exception& e) {
             ctx->resp().setStatusCode(HttpStatusCode::k500InternalServerError);
             ctx->resp().setBody(std::string("Internal Server Error: ") + e.what());
             ctx->resp().setCloseConnection(true); // 发生异常通常建议关闭连接

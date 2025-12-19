@@ -69,7 +69,8 @@ namespace sedum {
 
         /// 驱动执行下一个Handler
         /// 这实现了与Gin一致的洋葱模型
-        void next() {
+        /// 引入协程后，它每次推进一步，都需要等待相应的handler执行
+        Task<void> next() {
             index_++; // 更新handler执行链的状态
 
             // 这里没有像Gin那样通过一个循环管理，而是使用if
@@ -79,8 +80,10 @@ namespace sedum {
 
             if(index_ < static_cast<int>(handlersChain_.size())) {
                 // 说明没有到结束（后续还有handler），执行它
-                handlersChain_[index_](shared_from_this());
+                co_await handlersChain_[index_](shared_from_this());
+                LOG_INFO("continue");
             }
+            co_return;
         }
 
         /// 显式终止后续处理

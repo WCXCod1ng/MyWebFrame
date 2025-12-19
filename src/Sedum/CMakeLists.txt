@@ -18,6 +18,9 @@ set(LIBRARY_SOURCES
         pool/mysql_connection_pool.cpp
         common/ObjectPool.h
         common/ConcurrentObjectPool.h
+        coroutine/Coroutine.cpp
+        coroutine/Coroutine.h
+        db/DBInterfaces.h
 )
 
 add_library(Sedum ${LIBRARY_SOURCES})

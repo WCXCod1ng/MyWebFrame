@@ -26,7 +26,7 @@ struct JsonObject {
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(JsonObject, name, age); // 使用nlohmann/json定义序列化和反序列化
 
 /// 解决跨域问题的中间件
-void CorsMiddleware(const std::shared_ptr<Context>& ctx) {
+Task<void> CorsMiddleware(const std::shared_ptr<Context>& ctx) {
     // 1. 设置允许跨域的 Header
     ctx->resp().addHeader("Access-Control-Allow-Origin", "*"); // 生产环境建议指定具体域名
     ctx->resp().addHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With");
@@ -38,21 +38,22 @@ void CorsMiddleware(const std::shared_ptr<Context>& ctx) {
         // 对于 OPTIONS 请求，直接返回 204 No Content，并终止后续处理
         ctx->resp().setStatusCode(HttpStatusCode::k204NoContent);
         // [关键] 中断洋葱模型，不进入业务逻辑
-        return;
+        co_return;
     }
 
     // 3. 非 OPTIONS 请求，继续执行业务逻辑
-    ctx->next();
+    co_await ctx->next();
+    co_return;
 }
 
 
 // 记录执行时间的中间件
-void execution_time_middleware(const std::shared_ptr<Context>& ctx) {
+Task<void> execution_time_middleware(const std::shared_ptr<Context>& ctx) {
     // 使用单调时钟记录处理本次请求的时间
     std::chrono::time_point<std::chrono::steady_clock> start = std::chrono::steady_clock::now();
     LOG_INFO("请求到来");
     try {
-        ctx->next();
+        co_await ctx->next();
     } catch (std::exception& e) {
         std::chrono::time_point<std::chrono::steady_clock> end = std::chrono::steady_clock::now();
         LOG_INFO("请求发生异常，经过 {}ms", std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count());
@@ -60,10 +61,12 @@ void execution_time_middleware(const std::shared_ptr<Context>& ctx) {
     }
     std::chrono::time_point<std::chrono::steady_clock> end = std::chrono::steady_clock::now();
     LOG_INFO("请求结束，经过 {}ms", std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count());
+    LOG_INFO("continue");
+    co_return;
 }
 
 // 校验用户身份的中间件
-void auth_middleware(const std::shared_ptr<Context>& ctx) {
+Task<void> auth_middleware(const std::shared_ptr<Context>& ctx) {
     // 这里固定写死，实际需要引入配置文件（类）
     if(ctx->req().url().find("/register") == std::string::npos) {
 
@@ -83,17 +86,17 @@ void auth_middleware(const std::shared_ptr<Context>& ctx) {
             } catch (const std::exception& e) {
                 // 校验失败
                 ctx->STR(HttpStatusCode::k403Forbidden, "wrong authorization");
-                return;
+                co_return;
             }
         } else {
             // 403 forbidden
             ctx->STR(HttpStatusCode::k403Forbidden, "without authorization");
-            return;
+            co_return;
         }
     }
 
     // important，要执行next用以传递到后续的操作中
-    ctx->next();
+    co_await ctx->next();
 }
 
 
@@ -113,6 +116,11 @@ int main() {
     WebFrame app(addr, "SmartWeb");
 
     // app.use(CorsMiddleware);
+    // 测试异常处理
+    app.POST("/panic", [](const std::shared_ptr<Context>& ctx) -> Task<void> {
+        throw std::runtime_error("故意抛出一个异常");
+        // co_return;
+    });
 
     auto user_group = app.group("/user");
 
@@ -120,7 +128,7 @@ int main() {
     user_group.use(auth_middleware);
 
     // 模拟用户注册，这里简单编写为直接返回一个签名后的jwt
-    user_group.POST("/register", [](const std::shared_ptr<Context>& ctx) {
+    user_group.POST("/register", [](const std::shared_ptr<Context>& ctx) -> Task<void> {
         auto token = jwt::create()
             .set_issuer("auth_server")
             .set_type("JWS")
@@ -129,20 +137,22 @@ int main() {
             .set_payload_claim("user_id", jwt::claim(std::string("12345")))
             .sign(jwt::algorithm::hs256{secret});
         ctx->STR(HttpStatusCode::k200Ok, token);
+        co_return;
     });
 
     // 测试请求级作用域变量传递
-    user_group.GET("/user", [](const std::shared_ptr<Context>& ctx) {
+    user_group.GET("/user", [](const std::shared_ptr<Context>& ctx) -> Task<void> {
         auto user_id = ctx->get<std::string>("user_id");
         if(user_id) {
             ctx->STR(HttpStatusCode::k200Ok, "Hello:" + *user_id);
         } else {
             throw std::runtime_error("状态错误，找不到user_id");
         }
+        co_return;
     });
 
     // 注册GET方法
-    user_group.GET("/user/:id", [](const std::shared_ptr<Context>& ctx) {
+    user_group.GET("/user/:id", [](const std::shared_ptr<Context>& ctx) -> Task<void> {
         if(const auto user_id = ctx->pathVariable("id")) {
 
             LOG_INFO("GET方法被执行到");
@@ -151,22 +161,20 @@ int main() {
         } else {
             throw std::runtime_error("异常，没有匹配到任何内容");
         }
+        co_return;
     });
 
-    // 测试异常处理
-    user_group.POST("/panic", [](const std::shared_ptr<Context>& ctx) {
-       throw std::runtime_error("故意抛出一个异常");
-    });
 
     // 测试查询参数
-    user_group.GET("/user/query", [](const std::shared_ptr<Context>& ctx) {
+    user_group.GET("/user/query", [](const std::shared_ptr<Context>& ctx) -> Task<void> {
         if (const auto name = ctx->query("name")) {
             ctx->STR(HttpStatusCode::k200Ok, "hello " + *name);
         }
+        co_return;
     });
 
     // 自定义全局异常处理 (覆盖默认行为)
-    app.setExceptionHandler([](std::shared_ptr<Context>& ctx, const std::exception& e) {
+    app.setExceptionHandler([](const std::shared_ptr<Context>& ctx, const std::exception& e) {
         // 比如记录到日志文件
         LOG_ERROR("Global Exception: {}", e.what());
         // 返回友好的 JSON 错误信息
@@ -174,70 +182,79 @@ int main() {
     });
 
     // 自定义 404 页面
-    app.setNotFoundHandler([](const std::shared_ptr<Context>& ctx) {
+    app.setNotFoundHandler([](const std::shared_ptr<Context>& ctx) -> Task<void> {
         ctx->resp().setStatusCode(HttpStatusCode::k404NotFound);
         ctx->resp().setBody("<h1>My Custom 404 Page</h1>");
+        co_return;
     });
 
     // 自定义 405 页面
-    app.setMethodNotAllowedHandler([](const std::shared_ptr<Context>& ctx) {
+    app.setMethodNotAllowedHandler([](const std::shared_ptr<Context>& ctx) -> Task<void> {
         ctx->resp().setStatusCode(HttpStatusCode::k405MethodNotAllowed);
         ctx->resp().setBody("<h1>My Custom 405 Page</h1>");
+        co_return;
     });
 
     // 测试自定义路由组
     auto group1 = app.group("/group1");
 
     // 单独设置组中间件
-    group1.use([](const std::shared_ptr<Context>& ctx) {
+    group1.use([](const std::shared_ptr<Context>& ctx) -> Task<void> {
         LOG_INFO("组中间件被执行，路径为{}", ctx->req().url());
-        ctx->next();
+        co_await ctx->next();
+        co_return;
     });
 
-    group1.GET("/hello", [](const std::shared_ptr<Context>& ctx) {
+    /// 如果你的 Handler 里面全是同步逻辑（没有 co_await），你必须显式写一个 co_return;，强迫编译器把它当成协程处理
+    group1.GET("/hello", [](const std::shared_ptr<Context>& ctx) -> Task<void> {
         ctx->STR(HttpStatusCode::k200Ok, "Hello from group1!");
+        LOG_INFO("handler执行完毕");
+        co_return;
     });
 
-    group1.GET("/panic", [](const std::shared_ptr<Context>& ctx) {
+    group1.GET("/panic", [](const std::shared_ptr<Context>& ctx) -> Task<void> {
         throw std::runtime_error("组内故意抛出异常");
     });
 
     auto subgroup1 = group1.group("/subgroup1");
-    subgroup1.use([](const std::shared_ptr<Context>& ctx) {
+    subgroup1.use([](const std::shared_ptr<Context>& ctx) -> Task<void> {
         LOG_INFO("子组中间件被执行，路径为{}", ctx->req().url());
-        ctx->next();
+        co_await ctx->next();
     });
-    subgroup1.GET("/hello", [](const std::shared_ptr<Context>& ctx) {
+    subgroup1.GET("/hello", [](const std::shared_ptr<Context>& ctx) -> Task<void> {
         ctx->STR(HttpStatusCode::k200Ok, "Hello from subgroup1!");
+        co_return;
     });
 
     // 测试form-data解析
-    app.POST("/form", [](const std::shared_ptr<Context>& ctx) {
+    app.POST("/form", [](const std::shared_ptr<Context>& ctx) -> Task<void> {
         const auto& form_data = ctx->req().getFormData();
         std::string response = "Received form data:\n";
         for (const auto& [key, value] : form_data) {
             response += key + ": " + value + "\n";
         }
         ctx->STR(HttpStatusCode::k200Ok, response);
+        co_return;
     });
 
     // 测试JSON解析与json响应
-    app.POST("/json", [](const std::shared_ptr<Context>& ctx) {
+    app.POST("/json", [](const std::shared_ptr<Context>& ctx) -> Task<void> {
         std::optional<JsonObject> json_body;
         try {
             json_body = ctx->bindJSON<JsonObject>();
             if(!json_body) {
                 ctx->STR(HttpStatusCode::k400BadRequest, "Invalid JSON data");
-                return;
+                co_return;
             }
         } catch (const std::exception& e) {
             ctx->STR(HttpStatusCode::k400BadRequest, "Invalid JSON format");
-            return;
+            co_return;
         }
         json_body->name = "Server";
         json_body->age += 1;
         // ctx->STR(HttpStatusCode::k200Ok, response);
         ctx->JSON(HttpStatusCode::k200Ok, *json_body);
+        co_return;
     });
 
     app.start();

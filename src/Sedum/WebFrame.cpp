@@ -3,6 +3,7 @@
 //
 
 #include "WebFrame.h"
+#include "list"
 
 namespace sedum {
     // 定义线程局部的 Context 池
@@ -26,6 +27,10 @@ namespace sedum {
                 targetChain = {notFoundHandler_};
             }
 
+        std::shared_ptr<Context> t;
+        std::shared_ptr<Context> t2;
+        t2 = t;
+
             // 3. 将所有需要的数据打包进 Lambda，扔进线程池
             // 注意：req 使用 std::move 移动进 lambda
             // conn 是 shared_ptr，拷贝进 lambda 增加引用计数
@@ -48,16 +53,35 @@ namespace sedum {
                 auto ctx = t_contextPool.acquire();
                 ctx->init(chain, conn, std::move(req), std::move(params));
 
-                // 5. 开始执行洋葱模型，并捕获异常，注意它会捕获中间件和业务handler中的异常
-                try {
-                    ctx->next();
-                } catch (const std::exception& e) {
-                    if (exceptionHandler_) exceptionHandler_(ctx, e);
-                }
+                // 定义一个 Fire-and-Forget 的协程函数
+                // 这里的 lambda 必须返回 AsyncVoid，才能开启协程世界
+                auto run_pipeline = [ctx, this]() -> AsyncVoid {
+                    // 为了防止 ctx 在协程挂起期间析构，我们需要一直持有它
+                    // lambda capture [ctx] 已经持有了一份，但 lambda 自身随 Task 销毁可能会有问题？
+                    // 不，AsyncVoid 的 Frame 会把捕获的 ctx 移入堆内存，
+                    // 只要协程还在跑，ctx 就活着。安全！
 
-                // 6. 发送响应
-                // 业务逻辑执行完后，主动将 Response 写回
-                ctx->flush();
+                    try {
+                        // 进入洋葱模型
+                        co_await ctx->next();
+
+                        // 业务全部跑完，发响应
+                        ctx->flush();
+                    } catch (const std::exception& e) {
+                        if (exceptionHandler_) {
+                            exceptionHandler_(ctx, e);
+                        }
+                        // 发送错误响应
+                        ctx->flush(); // 假设 exceptionHandler 可能会设置 500 状态码
+                    }
+                    // 协程结束，AsyncVoid::final_suspend 触发，自动销毁 Frame
+                };
+
+                // 启动协程！
+                // 因为是 AsyncVoid，它会立即执行，遇到第一个 IO 阻塞点时 yield，
+                // 此时 run_pipeline 返回，lambda 结束，业务线程被释放去干别的事。
+                // 等 IO 回来，协程自动在某个线程（取决于 IO 库的调度）恢复。
+                run_pipeline();
             });
         }
 }

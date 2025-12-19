@@ -6,6 +6,10 @@
 #include <future>
 #include <iostream>
 #include <utility>
+#include <gtest/gtest.h>
+
+
+class CoroutineTest : public ::testing::Test {};
 
 struct Awaiter {
     int value;
@@ -186,7 +190,7 @@ Generator sequence() {
 }
 
 
-int main() {
+TEST_F(CoroutineTest, coroutine_example_test) {
     auto generator = sequence();
     for(int i = 0; i < 5; ++i) {
         if (generator.has_next()) {
@@ -195,5 +199,5 @@ int main() {
             break;
         }
     }
-    return 0;
+    ASSERT_TRUE(true);
 }

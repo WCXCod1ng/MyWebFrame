@@ -64,7 +64,7 @@ namespace fleabane {
 
         // 最大容量，0：阻塞队列容量无限制；正整数：指定阻塞队列的上限
         size_t m_max_size;
-        std::atomic<bool> m_is_closed; // 使用原子变量确保关闭状态的线程安全
+        bool m_is_closed;
     };
 
 
@@ -172,7 +172,7 @@ namespace fleabane {
             }
 
             // 标记flag
-            m_is_closed.store(true);
+            m_is_closed = true;
         } // 到此自动解锁
 
         // 唤醒所有阻塞的线程
@@ -183,7 +183,8 @@ namespace fleabane {
 
     template<typename T>
     bool BlockingQueue<T>::is_closed() const {
-        return m_is_closed.load();
+        std::lock_guard<std::mutex> lock_guard(m_mutex);
+        return m_is_closed;
     }
 
 
