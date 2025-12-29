@@ -11,6 +11,7 @@
 #include <net/TcpConnection.h>
 #include "common/Define.h"
 #include "common/JsonUtil.h"
+#include "db/DBInterfaces.h"
 
 namespace sedum {
     using namespace fleabane;
@@ -237,17 +238,7 @@ namespace sedum {
         /// 新增一个关键函数：需要在用户handler调用完毕后通过它来写回数据，实现了HttpServer的后半部分内容
         /// 它为业务线程提供了将响应写回IO线程的能力
         void flush() {
-            // // 序列化响应并通过网络发送
-            // Buffer buf;
-            // response.appendToBuffer(&buf);
-            // conn->send(&buf); // 此时数据进入 TcpConnection 的 OutputBuffer
-            //
-            // // 如果需要关闭连接，调用 shutdown
-            // // 注意：TcpConnection::shutdown 会等待数据发完再关闭
-            // if (response.closeConnection()) {
-            //     conn->shutdown();
-            // }
-            if (conn_->connected()) {
+            if (conn_ && conn_->connected()) {
                 Buffer buf;
                 resp_.appendToBuffer(&buf);
                 conn_->send(&buf); // 线程安全发送
@@ -255,6 +246,8 @@ namespace sedum {
                 if (resp_.closeConnection()) {
                     conn_->shutdown();
                 }
+            } else {
+                LOG_INFO("Connection doesn't exist");
             }
         }
 
@@ -268,6 +261,17 @@ namespace sedum {
             variables_.clear(); // 清空作用域级别的变量
             index_ = -1; // 初始化状态
         }
+        //
+        // // 数据库相关操作
+        // /// 注入数据库连接池
+        // void setDbPool(const std::shared_ptr<IDbPool>& pool) {
+        //     dbPool_ = pool;
+        // }
+        // /// 获取数据库连接池
+        // std::shared_ptr<IDbPool> db() {
+        //     return dbPool_;
+        // }
+
 
     private:
 
@@ -286,6 +290,10 @@ namespace sedum {
         HttpRequest req_;
         HttpResponse resp_;
         std::unordered_map<std::string, std::string> params_; // 存储WebRouter解析出来的请求参数，包括路径参数、查询字符串、通配符字符串等
+        //
+        // // 数据库接口
+        // /// 数据库连接池
+        // std::shared_ptr<IDbPool> dbPool_;
     };
 }
 

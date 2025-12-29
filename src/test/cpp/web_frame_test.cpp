@@ -99,13 +99,47 @@ Task<void> auth_middleware(const std::shared_ptr<Context>& ctx) {
     co_await ctx->next();
 }
 
+struct Foo {
+    int64_t a;
+    int16_t b;
+    float c;
+};
+struct Derived : Foo {
+    float d;
+};
+
+class Grand {
+public:
+    int g;
+};
+
+// 虚继承
+class Left : virtual public Grand {
+public:
+    virtual void f_left() {} // Left 特有的虚函数
+    int l;
+};
+
+// 虚继承
+class Right : virtual public Grand {
+public:
+    virtual void f_right() {} // Right 特有的虚函数
+    int r;
+};
+
+class Bottom : public Left, public Right {
+public:
+    int b;
+};
+
 
 int main() {
+    std::cout << sizeof(Foo) << " " << sizeof(Derived) << " " << sizeof(Bottom) <<  std::endl;
     // 开启日志，级别为 INFO
     Logger::Config log_config;
     log_config.log_folder = "/root/code/cpp/MyTinyWebServer/out/log"; // 日志文件存储的路径
     log_config.max_queue_size = 1024;     // 开启异步日志
-    LogLevel default_level = LogLevel::INFO; // 设置默认日志等级
+    log_config.level = LogLevel::DEBUG; // 设置默认日志等级
     // note 在debug的时候默认设置为true，方便debuug
     log_config.is_override = true;
     log_config.enable_console_sink = true;
@@ -120,6 +154,26 @@ int main() {
     app.POST("/panic", [](const std::shared_ptr<Context>& ctx) -> Task<void> {
         throw std::runtime_error("故意抛出一个异常");
         // co_return;
+    });
+
+    app.POST("/login", [](const std::shared_ptr<Context> &ctx) -> Task<void> {
+        auto username = *ctx->query("username");
+        auto passwd = *ctx->query("passwd");
+
+        LOG_DEBUG("username = {}, password = {}", username, passwd);
+
+        auto conn = co_await AsyncMySQLPool::get_instance().getConnectionAsync();
+
+        std::string sql = std::format("SELECT COUNT(*) FROM user WHERE username = '{}' and passwd = '{}'", username, passwd);
+        auto res = co_await conn->query(sql);
+
+        if(!res.rows.empty()) {
+            ctx->STR(HttpStatusCode::k200Ok, "success");
+        } else {
+            ctx->STR(HttpStatusCode::k400BadRequest, "failed");
+        }
+
+        co_return;
     });
 
     auto user_group = app.group("/user");

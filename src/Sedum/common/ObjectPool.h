@@ -93,7 +93,7 @@ namespace common {
     private:
         /// 内部接口：归还一个对象
         void release(T* ptr) {
-            // 增加判断逻辑，防止对象池太多
+            // 增加判断逻辑，防止对象池对象数太多
             if(pool_.size() >= maxSize_) {
                 delete ptr;
             } else {

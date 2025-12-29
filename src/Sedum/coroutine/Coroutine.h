@@ -39,26 +39,7 @@ namespace sedum {
             /// 注意，当协程执行结束时（标志是final_suspend()被调用），需要保证控制流转移回父协程函数，就在这个FinalAwaiter中实现
             struct FinalAwaiter {
                 bool await_ready() noexcept { return false;}
-                /// 核心，在这里进行控制流切换，从当前的协程切换回调用者
-                /// ======= 重要：必须使用对称转移 ======
-                /// 1. A 执行到 co_await B()。A 挂起。
-                /// 2. B 开始执行。
-                /// 3. B 执行完毕，进入 final_suspend。
-                /// 4. 问题爆发点： 在我们之前的代码中，FinalAwaiter::await_suspend 是这样写的：
-                /// ```c++
-                /// void await_suspend(handle_type h) {
-                /// auto parent = h.promise().continuation_;
-                /// if (parent) parent.resume(); // <--- 致命的函数调用！
-                /// }
-                /// ```
-                /// 5. parent.resume() 被调用，A 立即恢复执行。注意：此时 B 的 await_suspend 函数还没有返回，B 的栈帧还“活”在调用栈上。
-                /// 6. A 从 co_await B() 处醒来，继续往下走。
-                /// 7. A 的局部变量 Task b_task 离开作用域，触发析构函数 ~Task()。
-                /// 8. ~Task() 调用 b_handle.destroy()。B 的协程帧被销毁了。
-                /// 9. 回马枪： A 继续执行或返回。但此时，原本的函数调用 parent.resume() 终于结束了，程序试图回到 B 的 await_suspend 函数中继续执行后续指令（比如函数返回）。
-                /// 10. 崩溃： 此时 B 的内存空间已经被销毁了（第 8 步），CPU 跑到了一个不存在的内存地址或脏数据上 -> SIGILL。
-                ///
-                /// 解决方案是：将await_suspend的返回值类型改为std::coroutine_handle<>，并且将原来的parent.resume()更改为return parent，意思就是说控制流回到parent所对应的协程函数
+
                 std::coroutine_handle<> await_suspend(handle_type h) noexcept {
                     auto parent = h.promise().continuation_;
                     // // 如果有调用者协程，就调用它
@@ -99,7 +80,10 @@ namespace sedum {
 
         // Task 销毁时，连带销毁协程 Frame
         ~Task() {
-            if (handle_) handle_.destroy();
+            if (handle_) {
+                handle_.destroy();
+                handle_ = nullptr;
+            }
         }
 
         // note 通常我们需要传递 co_await，所以应当把Task也设计成Awaitable的

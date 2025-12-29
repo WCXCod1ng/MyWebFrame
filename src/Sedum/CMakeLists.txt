@@ -21,6 +21,7 @@ set(LIBRARY_SOURCES
         coroutine/Coroutine.cpp
         coroutine/Coroutine.h
         db/DBInterfaces.h
+        db/AsyncMysqlPool.h
 )
 
 add_library(Sedum ${LIBRARY_SOURCES})

@@ -16,6 +16,7 @@
 #include "common/Define.h"
 #include "WebRouter.h"
 #include "common/ConcurrentObjectPool.h"
+#include "db/AsyncMysqlPool.h"
 
 namespace sedum {
     using namespace fleabane;
@@ -26,14 +27,6 @@ namespace sedum {
     public:
 
         using HandlerFunc = common::HandlerFunc;
-
-        // WebFrame(EventLoop* loop, const InetAddress& addr, const std::string& name)
-        //     : server_(loop, addr, name)
-        // {
-        //     // 将框架的 dispatch 方法注册给底层 HttpServer
-        //     server_.setHttpCallback(
-        //         std::bind(&WebFrame::dispatch, this, std::placeholders::_1, std::placeholders::_2));
-        // }
 
         // 我们这里选择方式二，不使用外部的EventLoop，而是自行创建
         WebFrame(const InetAddress& addr, const std::string& name)
@@ -52,6 +45,9 @@ namespace sedum {
 
             server_.setHttpCallback(
                 std::bind(&WebFrame::dispatch, this, std::placeholders::_1, std::placeholders::_2));
+
+            // 初始化数据库连接池
+            AsyncMySQLPool::get_instance().init("127.0.0.1", "root", "wang", "yourdb", 3306, 10, &businessPool_);
 
             // 初始化默认处理函数
             notFoundHandler_ = defaultNotFoundHandler;
@@ -138,11 +134,14 @@ namespace sedum {
         /// 这是所有业务的实际入口，会根据路径选择对应的handler并进行处理
         void dispatch(const TcpConnectionPtr& conn, HttpRequest req);
 
+        AsyncVoid doDispatch(std::shared_ptr<Context> ctx);
+
         static Task<void> defaultNotFoundHandler(const std::shared_ptr<Context>& ctx) {
             ctx->resp().setStatusCode(HttpStatusCode::k404NotFound);
             ctx->resp().setStatusMessage("Not Found");
             ctx->resp().setBody("404 Not Found");
             ctx->resp().setCloseConnection(true);
+            co_return;
         }
 
         static Task<void> defaultMethodNotAllowedHandler(const std::shared_ptr<Context>& ctx) {
@@ -150,12 +149,14 @@ namespace sedum {
             ctx->resp().setStatusMessage("Method Not Allowed");
             ctx->resp().setBody("405 Method Not Allowed");
             ctx->resp().setCloseConnection(true); // 发生异常通常建议关闭连接
+            co_return;
         }
 
         static Task<void> defaultExceptionHandler(const std::shared_ptr<Context>& ctx, const std::exception& e) {
             ctx->resp().setStatusCode(HttpStatusCode::k500InternalServerError);
             ctx->resp().setBody(std::string("Internal Server Error: ") + e.what());
             ctx->resp().setCloseConnection(true); // 发生异常通常建议关闭连接
+            co_return;
         }
 
         /// 主EventLoop，保证它的生命周期必须最长

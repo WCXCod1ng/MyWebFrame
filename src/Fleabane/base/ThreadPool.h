@@ -18,7 +18,7 @@ namespace fleabane {
     class ThreadPool {
     public:
         // constructor
-        ThreadPool(size_t threads, size_t max_tasks = 10000, const std::string &name = "");
+        explicit ThreadPool(size_t threads, size_t max_tasks = 10000, const std::string &name = "");
 
         ~ThreadPool();
 
