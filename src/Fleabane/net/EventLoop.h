@@ -27,7 +27,7 @@ namespace fleabane {
     public:
         using Functor = std::function<void()>;
 
-        EventLoop();
+        EventLoop(std::string name = "unknown");
         ~EventLoop();
 
         // 定时器相关的接口
@@ -99,6 +99,7 @@ namespace fleabane {
         std::atomic<bool> quit_;     // 是否退出标识
 
         const std::thread::id threadId_; // 记录创建 Loop 的线程 ID
+        const std::string name_;
 
         /// 注意，每个EventLoop都会创建一个属于它自己的EventPoller
         /// 而EventPoller是操作内核中epoll的唯一入口，所以当前的EventLoop就和内核的epoll一一绑定了

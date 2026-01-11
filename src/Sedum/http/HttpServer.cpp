@@ -27,10 +27,11 @@ namespace sedum {
     HttpServer::HttpServer(EventLoop *loop,
                    const InetAddress &listenAddr,
                    const std::string &name,
+                   const std::shared_ptr<EventLoopThreadPool>& eventLoopThreadPool,
                    const TcpServer::Option option,
                    const size_t numThreads,
                    const double idleTimeoutSeconds)
-                       :server_(loop, listenAddr, name, option, numThreads, idleTimeoutSeconds),
+                       :server_(loop, listenAddr, name, eventLoopThreadPool, option, numThreads, idleTimeoutSeconds),
                         httpCallback_(defaultHttpCallback)
     {
         // 注册 TcpServer 的回调

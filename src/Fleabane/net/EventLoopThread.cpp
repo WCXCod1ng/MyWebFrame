@@ -53,7 +53,7 @@ namespace fleabane {
 
         // 核心：EventLoop 是在子线程的栈上创建的！
         // 它的生命周期与 threadFunc 函数一致
-        EventLoop loop;
+        EventLoop loop(name_);
 
         // 执行必要的初始化
         if (init_callback_) {

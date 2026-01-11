@@ -24,15 +24,16 @@ namespace fleabane {
     /// 而且“一个主EventLoop会同时服务多个TcpServer”也造成了主EventLoop不能作为TcpServer的成员
     TcpServer::TcpServer(EventLoop* loop,
                          const InetAddress& listenAddr,
-                         const std::string& nameArg,
+                         const std::string& name,
+                         const std::shared_ptr<EventLoopThreadPool>& eventLoopThreadPool,
                          const Option option,
                          const size_t numThreads,
                          const double idleTimeoutSeconds)
         : baseLoop_(CheckLoopNotNull(loop)),
           ipPort_(listenAddr.toIpPort()),
-          name_(nameArg),
+          name_(name),
           acceptor_(new Acceptor(loop, listenAddr, option == kReusePort)),
-          threadPool_(std::make_unique<EventLoopThreadPool>(loop, numThreads, name_)), // 使用TcpServer的名称作为线程池的名称（前缀）
+          threadPool_(eventLoopThreadPool), // 使用TcpServer的名称作为线程池的名称（前缀）
           nextConnId_(1),
           started_(0),
           idleTimeoutSeconds_(idleTimeoutSeconds)

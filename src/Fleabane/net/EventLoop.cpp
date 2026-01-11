@@ -6,6 +6,7 @@
 #include <sys/eventfd.h>
 #include <thread>
 #include <format>
+#include <utility>
 #include "Channel.h"
 #include "EpollPoller.h"
 #include "TimerQueue.h"
@@ -29,10 +30,11 @@ namespace fleabane {
         return evtfd;
     }
 
-    EventLoop::EventLoop()
+    EventLoop::EventLoop(std::string name)
         : looping_(false),
           quit_(false),
           threadId_(std::this_thread::get_id()),
+          name_(std::move(name)),
           poller_(std::make_unique<EpollPoller>(this)),
           wakeupFd_(createEventfd()),
           wakeupChannel_(std::make_unique<Channel>(this, wakeupFd_)),
@@ -214,7 +216,7 @@ namespace fleabane {
 
     void EventLoop::abortNotInLoopThread()
     {
-        LOG_ERROR("EventLoop::abortNotInLoopThread - EventLoop was created in threadId_ = ... current thread id = ...");
+        LOG_ERROR("EventLoop::abortNotInLoopThread - EventLoop was created in thread {}, while current thread name = {}", name_, current_thread::name());
         // 实际项目中可以打印具体的 thread ID
         abort();
     }

@@ -40,7 +40,8 @@ namespace fleabane {
 
         TcpServer(EventLoop* loop,
                   const InetAddress& listenAddr,
-                  const std::string& nameArg,
+                  const std::string& name,
+                  const std::shared_ptr<EventLoopThreadPool>& threadPool,
                   Option option = kNoReusePort,
                   size_t numThreads = 0,
                   double idleTimeoutSeconds = 60.0);
@@ -92,13 +93,15 @@ namespace fleabane {
         EventLoop* baseLoop_;  // baseLoop (用户定义的那个 loop)
 
         const std::string ipPort_;
+
+        // TcpServer的名称
         const std::string name_;
 
         // 核心组件
         /// 监听器，核心逻辑是accept一个新连接
         std::unique_ptr<Acceptor> acceptor_;
         /// 线程池，存储所有的IO线程（专用于处理已连接socket）
-        std::unique_ptr<EventLoopThreadPool> threadPool_;
+        std::shared_ptr<EventLoopThreadPool> threadPool_;
 
         // 回调函数
         ConnectionCallback connectionCallback_; // 连接建立/断开后的回调

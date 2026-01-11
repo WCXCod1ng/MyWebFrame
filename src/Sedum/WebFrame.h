@@ -30,10 +30,11 @@ namespace sedum {
 
         // 我们这里选择方式二，不使用外部的EventLoop，而是自行创建
         WebFrame(const InetAddress& addr, const std::string& name)
-            : baseLoop_(),
-              businessPool_(8, 1000, name), // 设置业务线程池的线程数为8，最大任务数为1000
+            : baseLoop_(name + "#main"),
+              eventLoopThreadPool_(std::make_shared<EventLoopThreadPool>(&baseLoop_, 10, "ioLoop")), // 设置业务线程池的线程数为8，最大任务数为1000
+              businessPool_(8, 1000, name),
               // server_(&baseLoop_, addr, "ioloop", TcpServer::kReusePort, 0),
-              server_(&baseLoop_, addr, "ioloop"),
+              server_(&baseLoop_, addr, name, eventLoopThreadPool_),
               rootGroup_("/", router_) // 管理一个根路由组，它匹配的前缀是“/”
         // 设置ioloop的线程数为8
         {
@@ -46,8 +47,6 @@ namespace sedum {
             server_.setHttpCallback(
                 std::bind(&WebFrame::dispatch, this, std::placeholders::_1, std::placeholders::_2));
 
-            // 初始化数据库连接池
-            AsyncMySQLPool::get_instance().init("127.0.0.1", "root", "wang", "yourdb", 3306, 10, &businessPool_);
 
             // 初始化默认处理函数
             notFoundHandler_ = defaultNotFoundHandler;
@@ -59,8 +58,11 @@ namespace sedum {
         void start() {
             // 禁止忽略信号（用于调试）
             signal(SIGPIPE, SIG_IGN);
-            // 启动HetpServer
+            // 启动HttpServer
             server_.start();
+            // 初始化数据库连接池，必须在HttpServer启动之后（实际上是EventLoopThreadLoop启动之后再启动），而且必须在主事件循环之前（否则永远也执行不到）
+            AsyncMySQLPool::get_instance().init("127.0.0.1", "root", "wang", "yourdb", 3306, 10, &businessPool_, eventLoopThreadPool_);
+
             // 启动主事件循环
             baseLoop_.loop();
         }
@@ -161,6 +163,8 @@ namespace sedum {
 
         /// 主EventLoop，保证它的生命周期必须最长
         EventLoop baseLoop_;
+
+        std::shared_ptr<EventLoopThreadPool> eventLoopThreadPool_;
 
         /// 专门用于处理业务的线程池
         fleabane::ThreadPool businessPool_;

@@ -36,6 +36,7 @@ namespace sedum {
         HttpServer(EventLoop *loop,
                    const InetAddress &listenAddr,
                    const std::string &name,
+                   const std::shared_ptr<EventLoopThreadPool>& eventLoopThreadPool,
                    const TcpServer::Option option = TcpServer::kReusePort,
                    const size_t numThreads = 8,
                    const double idleTimeoutSeconds = 60.0);
