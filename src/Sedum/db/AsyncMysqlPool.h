@@ -337,6 +337,7 @@ namespace sedum {
         enum class State {
             QUERY, // 当前连接正在执行QUERY阶段（等待数据库查询）
             STORE_RESULT, // 当前连接正在执行处理结果阶段
+            FETCH_ROW,
             DONE // 当前连接已经处理完，可以将结果交给业务协程
         } mStatus = State::QUERY;
 
@@ -347,24 +348,11 @@ namespace sedum {
         bool await_ready() { return false; } // 总是挂起
 
         void await_suspend(std::coroutine_handle<> h) {
-            // 函数的调用者是 co_await QueryWaiter{xxx}所在的协程，也就是业务协程
-            // 在这里会启动查询
-            int wait_status = 0;
-            // AsyncAPIStatus async_status;
-            net_async_status async_status;
+            // 尝试直接驱动状态机：fast path
+            drive_state_machine(h);
 
-            async_status = mysql_real_query_nonblocking(mConn->raw(), mSql.c_str(), mSql.length());
-
-            // query的状态机
-            if(async_status == NET_ASYNC_COMPLETE) {
-                // 立即完成（极少见，除非是极其微小的本地查询）
-                mStatus = State::STORE_RESULT;
-                handle_store_result(h);
-            } else if (async_status == NET_ASYNC_ERROR) {
-                // 处理错误
-                handle_error(h, mConn->raw());
-            } else {
-                // 否则说明还未就绪，需要挂起
+            // 如果状态机内部由于遇到了NOT_READY而导致状态机没有进入DONE状态，并且也没有发生错误，那么就需要向Muduo中注册该事件
+            if(mStatus != State::DONE && !mEx) {
                 mConn->loop()->runInLoop([this, h]() {
                     setup_io_handler(h);
                 });
@@ -415,134 +403,175 @@ namespace sedum {
 
         // 驱动状态机的核心函数
         void drive_state_machine(std::coroutine_handle<> h) {
+            if(mStatus == State::DONE) return; // 防止出现一个事件处理完，但是还没来得及clear_channel，而此时同一个Channel上的另一个事件也被触发了
             net_async_status async_status; // 异步API的执行状态
             MYSQL * mysql_ptr = mConn->raw();
 
-            // 根据当的状态，决定调用哪个函数
-            if(mStatus == State::QUERY) {
-                // 重复调用 query 函数，直到它不再返回 NOT_READY
-                async_status = mysql_real_query_nonblocking(mysql_ptr, mSql.c_str(), mSql.length());
+            while(true) {
+                switch (mStatus) {
+                    case State::QUERY :
+                    // 重复调用 query 函数，直到它不再返回 NOT_READY
+                    async_status = mysql_real_query_nonblocking(mysql_ptr, mSql.c_str(), mSql.length());
 
-                // 没有就绪则等待下一次事件
-                if(async_status == NET_ASYNC_NOT_READY) return;
+                    // 没有就绪则等待下一次事件
+                    if(async_status == NET_ASYNC_NOT_READY) return;
 
-                // 报错则处理错误
-                if(async_status == NET_ASYNC_ERROR) {
-                    handle_error(h, mConn->raw());
-                    return;
+                    // 报错则处理错误
+                    if(async_status == NET_ASYNC_ERROR) {
+                        handle_error(h, mConn->raw());
+                        return;
+                    }
+
+                    // 到此说明query完成，下一步，获取结果集
+                    mStatus = State::STORE_RESULT;
+                    break; // 继续continue，接下来会立即执行STORE_RESULT对应的处理函数
+
+                    case State::STORE_RESULT :
+                        // Store Result 完成，处理元数据并决定下一步
+                        if(!prepare_result_metadata(h, mysql_ptr)) return; // 不需要状态机循环了
+                        // if (mStatus == State::DONE) return;
+                        break; // 继续 while 循环，进入 FETCH_ROW
+
+                    case State::FETCH_ROW:
+                        if(!handle_fetch_row(h)) return; // 不需要状态机循环了
+                        break; // 否则继续 while 循环，进入 DONE
+
+                    default:
+                        finish_and_resume(h);
+                        return;
                 }
-
-                // 到此说明query完成，下一步，获取结果集
-                mStatus = State::STORE_RESULT;
-                // 处理结果
-                handle_store_result(h);
-
-            } else if (mStatus == State::STORE_RESULT) {
-                // 中间挂起之后，又等到结果状态了
-                handle_store_result(h);
             }
-        }
-
-
-        /// 处理store_result的返回状态
-        /// 只会在STORE_RESULT状态才会进入
-        void handle_store_result(std::coroutine_handle<> h) {
-            // 调用异步API获取结果
-            net_async_status async_status = mysql_store_result_nonblocking(mConn->raw(), &mRes);
-
-            // 同样，可能成功，也可能未就绪，如果未就绪则应该挂起
-            if(async_status == NET_ASYNC_NOT_READY) {
-                return;
-            }
-
-            // 处理错误
-            if(async_status == NET_ASYNC_ERROR) {
-                handle_error(h, mConn->raw());
-                return;
-            }
-
-            // 结果已完成，此时要停止监听
-            clear_channel(mConn->channel());
-            // 解析结果
-            parse_and_resume(h);
         }
 
         /// 处理错误
+        /// 恢复协程
         void handle_error(std::coroutine_handle<> h, MYSQL * mysql) {
             // 我们需要立即处理，虽然修改epoll无法立即完成，但是可以提前将回调置空
             clear_channel(mConn->channel());
 
             mEx = std::make_exception_ptr(std::runtime_error(mysql_error(mysql))); // 抛出异常
+            mStatus = State::DONE; // 也将结果置为DONE，防止后续连接处理
             // 提交给业务线程池：恢复业务协程执行
             mBusinessPool->enqueue([h]() { h.resume(); });
         }
 
-        /// 解析MySQL结果和恢复执行
-        /// 同样也是只会在STORE_RESULT状态才会进入
-        void parse_and_resume(std::coroutine_handle<> h) {
+
+        /// 解析结果集的元数据信息
+        /// 如果有结果集，则同步等待元数据，并且将状态转移到FETCH_ROW
+        /// 如果没有结果集（INSERT、UPDATE），那么不会经过FETCH_ROW，而是直接执行finish_and_resume，将状态转移到DONE
+        /// 同样返回外层是否需要继续
+        bool prepare_result_metadata(std::coroutine_handle<> h, MYSQL* mysql_ptr) {
+            if(mStatus != State::STORE_RESULT) return false;
+            net_async_status async_status = mysql_store_result_nonblocking(mysql_ptr, &mRes);
+            // 没有就绪则等待下一次事件
+            if(async_status == NET_ASYNC_NOT_READY) return false;
+
+            // 报错则处理错误
+            if(async_status == NET_ASYNC_ERROR) {
+                handle_error(h, mConn->raw());
+                return false;
+            }
+
             if (mRes) {
                 // --- 情况 A: 有结果集 (SELECT, SHOW 等) ---
-
-                // A-1. 获取行数和列数
                 unsigned int num_fields = mysql_num_fields(mRes);
-                my_ulonglong num_rows = mysql_num_rows(mRes);
+                my_ulonglong num_rows = mysql_num_rows(mRes); // 注意：store_result 后行数已知
 
-                // A-2. 获取列名 (Metadata)
+                // 存储列信息
                 MYSQL_FIELD* fields = mysql_fetch_fields(mRes);
                 mResult.columns.reserve(num_fields);
                 for (unsigned int i = 0; i < num_fields; i++) {
                     mResult.columns.emplace_back(fields[i].name);
                 }
+                // 预分配行空间
+                mResult.rows.reserve(num_rows);
 
-                // A-3. 获取行数据
-                mResult.rows.reserve(num_rows); // 预分配行空间
+                // 状态流转：进入行获取阶段
+                mStatus = State::FETCH_ROW;
+                // 注意：此时不要 disableAll Channel，因为 fetch_row 还需要网络
+            } else {
+                // --- 情况 B: 无结果集 (INSERT, UPDATE) ---
+                if (mysql_field_count(mConn->raw()) == 0) {
+                    mResult.affectedRows = mysql_affected_rows(mConn->raw());
+                    mResult.insertId = mysql_insert_id(mConn->raw());
+                } else {
+                    handle_error(h, mConn->raw()); // 应该是 SELECT 但返回了 NULL
+                    return false;
+                }
+                // 不需要 Fetch，直接完成
+                // finish_and_resume(h);
+                mStatus = State::DONE; // 我们这里只修改状态，让外层的drive_state_machine决定什么动作
+            }
 
-                MYSQL_ROW row;
-                while ((row = mysql_fetch_row(mRes))) {
-                    std::vector<std::string> row_data;
-                    row_data.reserve(num_fields); // 预分配列空间
+            return true;
+        }
 
-                    // 获取当前行每一列的长度（重要：用于处理二进制数据和防止 \0 截断）
+        /// 释放MySQL的结果集资源
+        /// 同步清理Channel
+        /// 恢复业务协程
+        void finish_and_resume(std::coroutine_handle<> h) {
+            if(mStatus != State::DONE) return;
+            // 1. 释放 MySQL 结果集资源
+            if (mRes) {
+                mysql_free_result(mRes);
+                mRes = nullptr;
+            }
+
+            // 2. 清理 Muduo Channel (同步清理)
+            // 确保不会再触发任何回调
+            auto channel = mConn->channel();
+            clear_channel(channel);
+
+            // 3. 恢复业务协程
+            mBusinessPool->enqueue([h]() { h.resume(); });
+        }
+
+        /// 处理mStatus == FETCH_ROW的情况：获取每一行
+        /// 返回是否需要继续状态机循环
+        bool handle_fetch_row(std::coroutine_handle<> h) {
+            if(mStatus != State::FETCH_ROW) return false;
+            MYSQL_ROW row;
+            net_async_status async_status;
+
+            while (true) {
+                async_status = mysql_fetch_row_nonblocking(mRes, &row);
+
+                if (async_status == NET_ASYNC_NOT_READY) {
+                    // 本地缓冲区空了，需要等待网络数据。
+                    // 此时 Channel 依然开启 Read 事件，直接返回，等待下一次回调。
+                    return false;
+                }
+
+                if (async_status == NET_ASYNC_ERROR) {
+                    handle_error(h, mConn->raw());
+                    return false;
+                }
+
+                // status == NET_ASYNC_COMPLETE
+                if (row) {
+                    // --- 解析单行数据 ---
+                    unsigned int num_fields = mysql_num_fields(mRes);
                     unsigned long* lengths = mysql_fetch_lengths(mRes);
+                    std::vector<std::string> row_data;
+                    row_data.reserve(num_fields);
 
                     for (unsigned int i = 0; i < num_fields; i++) {
                         if (row[i]) {
-                            // 构造 string，指定长度
                             row_data.emplace_back(row[i], lengths[i]);
                         } else {
-                            // 处理数据库 NULL 值，这里默认转为空字符串
-                            // 也可以约定一个特殊标记，或者 DBResult 使用 std::optional<string>
                             row_data.emplace_back("");
                         }
                     }
                     mResult.rows.push_back(std::move(row_data));
-                }
 
-                // 释放结果集内存
-                mysql_free_result(mRes);
-                mRes = nullptr; // 释放后就应当立即置为空
-
-            } else {
-                // --- 情况 B: 无结果集 (INSERT, UPDATE, DELETE) 或 错误 ---
-
-                // mysql_field_count 返回应该有的列数
-                // 如果为 0，说明原本就是没有结果集的操作，成功
-                // 如果 > 0，说明应该有结果集但 mysql_store_result 返回了 NULL，这是个错误
-                if (mysql_field_count(mConn->raw()) == 0) {
-                    // 获取受影响行数
-                    mResult.affectedRows = mysql_affected_rows(mConn->raw());
-                    // 获取自增ID
-                    mResult.insertId = mysql_insert_id(mConn->raw());
+                    // 【循环继续】：继续尝试获取下一行
                 } else {
-                    mEx = std::make_exception_ptr(std::runtime_error("MySQL Store Result Error: " + std::string(mysql_error(mConn->raw()))));
+                    // row == nullptr，表示所有行获取完毕，将状态转移到DONE
+                    mStatus = State::DONE;
+                    // finish_and_resume(h);
+                    return true;
                 }
             }
-
-            // 返回前，将状态设置为Done
-            mStatus = State::DONE;
-
-            // 控制权回到业务协程
-            mBusinessPool->enqueue([h]() { h.resume(); });
         }
     };
 
