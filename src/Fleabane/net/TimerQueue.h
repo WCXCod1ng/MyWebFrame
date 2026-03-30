@@ -39,13 +39,13 @@ namespace fleabane {
     private:
         // TimerQueue 属于 Loop 线程，以下函数只能在 Loop 线程运行
         using Entry = std::pair<TimeStamp, Timer*>;
-        using TimerList = std::set<Entry>;
+        using TimerSet = std::set<Entry>;
         using ActiveTimer = std::pair<Timer*, int64_t>;
         using ActiveTimerSet = std::set<ActiveTimer>;
 
         /// timerfd 的 Channel 读回调，当定时器到达后会timerfd可读，此时就会调用该函数
         /// 叫handleTimerExpirationEvent更为合理，表明它是定时器到期的事件处理器
-        void handleChannelRead();
+        void handleTimerExpirationEvent();
 
         /// 从定时器队列中获取并移除所有已过期的定时器
         std::vector<Entry> getExpired(TimeStamp now);
@@ -70,7 +70,7 @@ namespace fleabane {
         // 核心数据结构：按时间排序的定时器列表，注意使用 std::set 来存储 Timer。
         // Key: std::pair<TimeStamp, Timer*>。
         // 好处：set 会自动按照 TimeStamp 排序。我们只需要看 set.begin() 就能拿到最早要过期的那个任务。同时由于加入了 Timer* 地址，即使两个任务时间完全一样，它们也是不同的元素
-        TimerList timers_;
+        TimerSet timers_;
 
         // 辅助数据结构：用于 cancel 时通过 Timer* 快速找到 Timer
         // 主要是为了防止地址复用导致的误删（虽然有 sequence 保护）

@@ -35,7 +35,7 @@ namespace fleabane {
         }
 
         // 开始监听（开启 socket 的 listen，并向 Poller 注册可读事件）
-        bool listenning() const { return listenning_; }
+        bool listening() const { return listening_; }
         void listen();
 
     private:
@@ -57,7 +57,7 @@ namespace fleabane {
         // 当 Acceptor 拿到一个新连接的 fd 后，它不知道该怎么处理（它不管理业务线程池）。它通过这个回调，把 fd 扔回给 TcpServer，让TcpServer决定如何处理新连接
         NewConnectionCallback newConnectionCallback_;
 
-        bool listenning_;
+        bool listening_;
 
         /// 【高并发技巧】预留一个空闲的文件描述符，这是Muduo 网络库（以及 libev 等工业级库）中处理 FD 耗尽 (EMFILE 错误) 的经典做法
         /// 问题场景：

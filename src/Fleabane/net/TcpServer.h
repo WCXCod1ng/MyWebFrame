@@ -26,8 +26,6 @@ namespace fleabane {
      * 1. Acceptor 运行在 baseLoop (主线程)
      * 2. 已连接的 TcpConnection 运行在 ioLoop (线程池中的子线程)
      * 3. 所有对 connections_ Map 的操作都在 baseLoop 中进行
-     *
-     * 在引入协程后，TcpServer中的代码仍然不需要变化，它的角色仍然是“连接工厂”和“生命周期管理器”，它不需要知道内部是跑协程还是跑回调，只需要把相应的配置传到底层的TcpConnection中
      */
     class TcpServer : NonCopyable {
     public:
@@ -58,10 +56,7 @@ namespace fleabane {
 
         // --- 注册用户回调 ---
         /// 设置连接建立或关闭时的回调
-        /// 以前：用于打印日志或初始化上下文。
-        /// 现在：这是协程的启动入口。HttpServer 会在这里注册 onConnection，并在其中调用 handleHttpSession(conn) 来启动协程。
         void setConnectionCallback(const ConnectionCallback& cb) { connectionCallback_ = cb; }
-        /// @deprecated 在引入协程后，该函数不应当被使用，或者被使用也只能作为fallback，因为我们处理消息的逻辑不再通过回调处理了，而是通过协程同步co_await来处理
         /// 设置收到对端发送的消息后的回调
         void setMessageCallback(const MessageCallback& cb) { messageCallback_ = cb; }
         /// 设置写操作完毕后的回调
@@ -82,7 +77,6 @@ namespace fleabane {
         void newConnection(int sockfd, const InetAddress& peerAddr);
 
         /// TcpConnection 断开时的回调
-        /// 当协程里调用 conn->forceClose() 时，会触发 handleClose，进而回调 TcpServer::removeConnection
         void removeConnection(const TcpConnectionPtr& conn);
 
         /// 在 Loop 中移除连接的各种 helper

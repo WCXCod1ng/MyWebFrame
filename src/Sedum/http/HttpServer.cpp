@@ -39,7 +39,6 @@ namespace sedum {
         server_.setConnectionCallback(
             std::bind(&HttpServer::onConnection, this, std::placeholders::_1));
 
-        // note 引入协程后，如下的代码可以被注释掉，因为协程接管了读数据
         // 2. 收到数据时 -> onMessage
         server_.setMessageCallback(
             std::bind(&HttpServer::onMessage, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));

@@ -102,8 +102,7 @@ namespace fleabane {
         LOG_INFO("TcpServer::newConnection [{}] - new connection [{}] from {}", name_, connName, peerAddr.toIpPort());
 
         // 3. 获取本地地址 (getsockname)
-        InetAddress localAddr(0); // 这里的实现略，通常可以通过 sockets::getLocalAddr(sockfd) 获取
-        // 为了简化，这里先不实现 getLocalAddr，实际项目中建议补上
+        InetAddress localAddr = InetAddress::getInetAddress(sockfd);
 
         // 4. 创建 TcpConnection 对象
         // 使用 shared_ptr 管理，引用计数初始化为 1
@@ -119,7 +118,6 @@ namespace fleabane {
 
         // 6. 设置用户回调
         conn->setConnectionCallback(connectionCallback_);
-        // note 实际上协程模式下用不到
         conn->setMessageCallback(messageCallback_);
         conn->setWriteCompleteCallback(writeCompleteCallback_);
 
@@ -145,7 +143,7 @@ namespace fleabane {
     void TcpServer::removeConnection(const TcpConnectionPtr& conn)
     {
         // 由于 removeConnection 可能会被多线程调用 (conn 在 subLoop 中)，
-        // 我们必须保证从 map 中移除的操作发生在 mainLoop 中。
+        // 我们必须保证从 map 中移除的操作发生在 baseLoop 中。
         baseLoop_->runInLoop(
             std::bind(&TcpServer::removeConnectionInLoop, this, conn));
     }

@@ -140,7 +140,6 @@ namespace fleabane {
 
         // --- 为Channel准备的事件回调函数组---
         /// Channel中可读事件触发时执行的回调
-        /// 在引入协程后，我们需要对handleChannelRead进行改动
         void handleChannelRead(TimeStamp receiveTime);
         void handleChannelWrite();
         void handleChannelClose();
@@ -163,7 +162,7 @@ namespace fleabane {
 
 
         /// 所属的 SubReactor
-        /// 一个EventLoop在运行期间可以管理成千上万的TcpConnection，但一个TcpConnection在其整个生命周期内只属于一个EventLoop，该TcpConnection归属于哪个EventLoop，是咋accept之后就确定好的了（之后永远不变）
+        /// 一个EventLoop在运行期间可以管理成千上万的TcpConnection，但一个TcpConnection在其整个生命周期内只属于一个EventLoop，该TcpConnection归属于哪个EventLoop，是在accept之后就确定好的了（之后永远不变）
         /// note 这里不能替换为引用，因为在极端情况下TcpConnection的生命周期比EventLoop还要长，这实际上是逻辑错误（编译器会假设引用在其生命周期内一直有效，可能会导致错误的优化）；而使用指针时，只是野指针，编译器允许这种行为
         /// 因为TcpConnection是shared_ptr，而它所属的EventLoop只是一个线程栈上的对象，在该EventLoop析构之后，该TcpConnection可能会因为回调而被其他线程持有，这样就造成了TcpConnection生命周期长于所属的EventLoop的现象
         /// 注意，这里最好加上顶层const修饰，因为它表达了一个含义：ioLoop_的值一旦被初始化就永远不能再被赋值，这是因为一个TcpConnection一旦被创建就和传入的EventLoop永远关联起来了

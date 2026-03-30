@@ -19,19 +19,16 @@ namespace fleabane {
         : loop_(loop),
           acceptSocket_(::socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, IPPROTO_TCP)), // 注意设置监听socket为非阻塞
           acceptChannel_(loop, acceptSocket_.fd()), // 绑定 Channel 与 listenfd
-          listenning_(false),
+          listening_(false),
           idleFd_(::open("/dev/null", O_RDONLY | O_CLOEXEC)) // 预先占位
     {
-        // 1. 设置地址重用 (必须设置，否则重启服务会报错 "Address already in use")
-        acceptSocket_.setReuseAddr(true);
-
-        // 2. 设置端口重用 (Linux Kernel 3.9+ 支持，允许高并发下的多线程侦听同一个端口)
+        // 1. 设置端口重用 (Linux Kernel 3.9+ 支持，允许高并发下的多线程侦听同一个端口)
         acceptSocket_.setReusePort(reuseport);
 
-        // 3. 绑定地址
+        // 2. 绑定地址
         acceptSocket_.bindAddress(listenAddr);
 
-        // 4. 注册 Channel 的读回调
+        // 3. 注册 Channel 的读回调
         // 当有新连接到来时，执行 Acceptor::handleRead
         TimeStamp time_stamp = TimeStamp::now();
         acceptChannel_.setReadCallback(std::bind(&Acceptor::handleRead, this));
@@ -48,7 +45,7 @@ namespace fleabane {
 
     void Acceptor::listen()
     {
-        listenning_ = true;
+        listening_ = true;
         acceptSocket_.listen(); // 开启 listen 系统调用
 
         // 注册 EPOLLIN 事件到 Poller
@@ -99,7 +96,6 @@ namespace fleabane {
 
                     // 2. 再次 accept，此时因为有一个空坑位，accept 应该会成功
                     // 这一步是为了把这个连接从内核的“全连接队列”中取出来
-                    // 否则 Poller (LT模式) 会一直触发 EPOLLIN，导致 busy loop (CPU 100%)
                     idleFd_ = ::accept(acceptSocket_.fd(), nullptr, nullptr);
 
                     // 3. 接受上来后，立刻关闭它（优雅地拒绝客户端）

@@ -61,7 +61,7 @@ namespace sedum {
             // 启动HttpServer
             server_.start();
             // 初始化数据库连接池，必须在HttpServer启动之后（实际上是EventLoopThreadLoop启动之后再启动），而且必须在主事件循环之前（否则永远也执行不到）
-            AsyncMySQLPool::get_instance().init("127.0.0.1", "root", "wang", "yourdb", 3306, 10, &businessPool_, eventLoopThreadPool_);
+            AsyncMySQLPool::get_instance().init("127.0.0.1", "root", "wang", "test_webframe", 3306, 10, &businessPool_, eventLoopThreadPool_);
 
             // 启动主事件循环
             baseLoop_.loop();

@@ -55,7 +55,6 @@ namespace fleabane {
 
     void readTimerfd(const int timerfd, TimeStamp now) {
         uint64_t howmany;
-        // 必须读出数据，否则 LT 模式下会一直触发
         ssize_t n = ::read(timerfd, &howmany, sizeof howmany);
         if (n != sizeof howmany) {
             LOG_ERROR("TimerQueue::handleRead() reads {} bytes instead of 8", n);
@@ -72,7 +71,7 @@ namespace fleabane {
           callingExpiredTimers_(false)
     {
         // 绑定 Channel 回调
-        timerfdChannel_.setReadCallback(std::bind(&TimerQueue::handleChannelRead, this));
+        timerfdChannel_.setReadCallback(std::bind(&TimerQueue::handleTimerExpirationEvent, this));
         // 开启读事件监听
         timerfdChannel_.enableReading();
     }
@@ -127,7 +126,7 @@ namespace fleabane {
         });
     }
 
-    void TimerQueue::handleChannelRead() {
+    void TimerQueue::handleTimerExpirationEvent() {
         loop_->assertInLoopThread();
         TimeStamp now(TimeStamp::now());
 
@@ -217,7 +216,7 @@ namespace fleabane {
 
         // 插入 timers_
         {
-            std::pair<TimerList::iterator, bool> result = timers_.emplace(when, timer); // 原地构造插入
+            std::pair<TimerSet::iterator, bool> result = timers_.emplace(when, timer); // 原地构造插入
             assert(result.second); (void)result;
         }
 

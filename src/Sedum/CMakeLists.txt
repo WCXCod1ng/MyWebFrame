@@ -22,9 +22,17 @@ set(LIBRARY_SOURCES
         coroutine/Coroutine.h
         db/DBInterfaces.h
         db/AsyncMysqlPool.h
+        common/LockFreeQueue.h
+        common/LockFreeFreeList.h
+        common/LockFreeDefines.h
 )
 
 add_library(Sedum ${LIBRARY_SOURCES})
+
+# 开启x86_64架构下的cmpxchg16b指令支持
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64")
+    target_compile_options(Sedum PUBLIC -mcx16)  # Enable cmpxchg16b instruction，注意必须是PUBLIC
+endif()
 
 target_include_directories(Sedum
         PUBLIC
@@ -34,4 +42,5 @@ target_include_directories(Sedum
 target_link_libraries(Sedum
         PUBLIC
         Fleabane
+        atomic
 )

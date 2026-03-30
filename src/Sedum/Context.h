@@ -79,7 +79,7 @@ namespace sedum {
             // 对于中间件：需要主动next，否则认为中断
             // 对于业务handler，由于它是最后一个，所以即使调用next也会退出
 
-            if(index_ < static_cast<int>(handlersChain_.size())) {
+            if(!isCompleted()) {
                 // 说明没有到结束（后续还有handler），执行它
                 co_await handlersChain_[index_](shared_from_this());
                 LOG_INFO("continue");
@@ -92,8 +92,8 @@ namespace sedum {
             index_ = static_cast<int>(handlersChain_.size());
         }
 
-        /// 判断是否终止，Middleware和handler都执行完毕意味着要终止
-        bool isAborted() const {
+        /// 判断是否终止或自然结束，Middleware和handler都执行完毕意味着要终止
+        bool isCompleted() const {
             return index_ >= static_cast<int>(handlersChain_.size());
         }
 

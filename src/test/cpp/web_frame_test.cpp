@@ -167,7 +167,8 @@ int main() {
         std::string sql = std::format("SELECT COUNT(*) FROM user WHERE username = '{}' and passwd = '{}'", username, passwd);
         auto res = co_await conn->query(sql);
 
-        if(!res.rows.empty()) {
+        if(!res.rows.empty() && res.rows.front().front() != "0") {
+            LOG_DEBUG("res = {}", res.rows.front().front());
             ctx->STR(HttpStatusCode::k200Ok, "success");
         } else {
             ctx->STR(HttpStatusCode::k400BadRequest, "failed");

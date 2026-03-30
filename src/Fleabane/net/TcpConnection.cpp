@@ -93,12 +93,6 @@ namespace fleabane {
     /// 已连接Channel发现可读时实际上会调用该函数，执行实际的读事件
     ///
     /// 注意，它必须被执行在所分配的EventLoop所在的线程（所以需要在执行前assertInLoopThread()）
-    ///
-    /// 在引入协程后的修改思路：
-    /// 1. 优先级判断：当读事件触发时，首先检查是否有挂起的协程（coroutineCallback_ 是否存在）。
-    /// 2. 协程分支：如果有协程在等待，我们不读取数据，而是直接执行回调（即 resume 协程）。协程醒来后，会自己在 IoAwaiter::await_resume 中去调用 readFd 读取数据。必须直接 return，防止数据被下面的传统逻辑“偷吃”了。
-    /// 3. 传统分支：如果没有协程，保持你原有的逻辑不变（读取数据 -> 调用 messageCallback_）。
-    /// 4. 公共逻辑：无论哪种模式，读事件都意味着连接活跃，所以 extendLifetime() 要放在最前面。
     void TcpConnection::handleChannelRead(TimeStamp receiveTime)
     {
         ioLoop_->assertInLoopThread();
